@@ -1,136 +1,162 @@
-// scripts/relocate.mjs
-// Move TXT files across repos -> canonical folders in Law-Texts-ui
-// Fixes 422 by supplying 'sha' on updates + deletes.
+// Relocate TXT files across repos using GitHub Contents API.
+// Supports create or update (handles required SHA automatically).
 
 import { Octokit } from "@octokit/rest";
 import fs from "node:fs/promises";
-import path from "node:path";
 
-const TOKEN = process.env.GITHUB_TOKEN || process.env.RELOCATE_TOKEN;
-if (!TOKEN) {
-  console.error("Missing GITHUB_TOKEN / RELOCATE_TOKEN env var.");
-  process.exit(1);
+const token =
+  process.env.GH_TOKEN ||
+  process.env.GITHUB_TOKEN ||
+  process.env.GH_PAT;
+
+if (!token) {
+  throw new Error("Missing GH_TOKEN / GITHUB_TOKEN / GH_PAT in env.");
 }
 
-const TARGET_OWNER = process.env.TARGET_OWNER || "Info1691";
-const TARGET_REPO  = process.env.TARGET_REPO  || "Law-Texts-ui";
-const TARGET_BRANCH = process.env.TARGET_BRANCH || "main";
-
-// PLAN comes either from env PLAN (JSON string) or scripts/plan.json
-async function loadPlan() {
-  const fromEnv = process.env.PLAN && process.env.PLAN.trim();
-  if (fromEnv) {
-    try { return JSON.parse(fromEnv); } 
-    catch (e) {
-      console.error("PLAN env is not valid JSON.");
-      throw e;
-    }
-  }
-  const planPath = path.join(process.cwd(), "scripts", "plan.json");
-  try {
-    const txt = await fs.readFile(planPath, "utf8");
-    return JSON.parse(txt);
-  } catch {
-    console.log("No PLAN provided and no scripts/plan.json found. Nothing to do.");
-    return [];
-  }
-}
+const octokit = new Octokit({ auth: token });
 
 /**
- * Move spec:
+ * Plan format (array). Example item:
  * {
- *   "src_owner": "Info1691",
- *   "src_repo":  "rules-ui",
- *   "src_path":  "data/rules/uk/icaew-code.txt",
- *   "dst_path":  "data/rules/uk/icaew-code.txt",   // path inside Law-Texts-ui
- *   "message":   "Relocate ICAEW code to canonical rules folder"
+ *   "from": { "owner":"Info1691", "repo":"rules-ui", "path":"data/rules/uk/icaew-code.txt", "ref":"main" },
+ *   "to":   { "owner":"Info1691", "repo":"Law-Texts-ui", "path":"data/rules/uk/icaew-code.txt", "ref":"main" },
+ *   "message": "Relocate: ICAEW code",
+ *   "deleteSource": false
  * }
  */
-const octokit = new Octokit({ auth: TOKEN });
+async function loadPlan() {
+  const fromInput = process.env.PLAN && process.env.PLAN.trim();
+  if (fromInput) {
+    try { return JSON.parse(fromInput); }
+    catch (e) { throw new Error("PLAN input is not valid JSON."); }
+  }
+  const planPath = (process.env.PLAN_PATH || "").trim();
+  if (planPath) {
+    const raw = await fs.readFile(planPath, "utf8");
+    return JSON.parse(raw);
+  }
+  // Fallback demo — edit or provide PLAN/PLAN_PATH
+  return [
+    // Example (comment out or replace)
+    // {
+    //   from:{owner:"Info1691",repo:"rules-ui",path:"data/rules/uk/icaew-code.txt",ref:"main"},
+    //   to:{owner:"Info1691",repo:"Law-Texts-ui",path:"data/rules/uk/icaew-code.txt",ref:"main"},
+    //   message:"Relocate: icaew-code.txt",
+    //   deleteSource:false
+    // }
+  ];
+}
 
-async function getFile(oct, owner, repo, ref, filePath) {
+async function getFile(o, r, p, ref = "main") {
   try {
-    const res = await oct.repos.getContent({ owner, repo, path: filePath, ref });
-    if (Array.isArray(res.data)) throw new Error("Expected a file, got directory");
+    const res = await octokit.repos.getContent({ owner: o, repo: r, path: p, ref });
+    if (Array.isArray(res.data)) throw new Error(`Path ${p} is a directory, expected file.`);
     return {
-      exists: true,
       sha: res.data.sha,
       encoding: res.data.encoding,
-      content: res.data.content, // base64
+      content: res.data.content // base64
     };
   } catch (err) {
-    if (err.status === 404) return { exists: false };
+    if (err.status === 404) return null;
     throw err;
   }
 }
 
-async function putFile(oct, owner, repo, branch, filePath, contentBase64, message) {
-  // If destination exists, include sha on update to avoid 422
-  const current = await getFile(oct, owner, repo, branch, filePath);
-  const params = {
-    owner, repo, path: filePath,
-    message,
-    content: contentBase64,
-    branch,
-    committer: { name: "Relocator", email: "actions@github.com" },
-    author:    { name: "Relocator", email: "actions@github.com" },
-  };
-  if (current.exists) params.sha = current.sha;
-  return oct.repos.createOrUpdateFileContents(params);
+function normalizeBase64(b64) {
+  // decode → normalize line endings → re-encode
+  const text = Buffer.from(b64, "base64").toString("utf8").replace(/\r\n?/g, "\n");
+  return Buffer.from(text, "utf8").toString("base64");
 }
 
-async function deleteFile(oct, owner, repo, branch, filePath, sha, message) {
-  return oct.repos.deleteFile({
-    owner, repo, path: filePath, sha,
-    branch, message,
-    committer: { name: "Relocator", email: "actions@github.com" },
-    author:    { name: "Relocator", email: "actions@github.com" },
+async function putFile({ owner, repo, path, branch, message, contentB64, sha }) {
+  return octokit.repos.createOrUpdateFileContents({
+    owner, repo, path,
+    message,
+    content: contentB64,
+    branch: branch || "main",
+    sha // include only if updating
   });
 }
 
-function asBase64(buf) {
-  return Buffer.isBuffer(buf) ? buf.toString("base64") : Buffer.from(buf, "utf8").toString("base64");
+async function deleteFile({ owner, repo, path, branch, message, sha }) {
+  return octokit.repos.deleteFile({
+    owner, repo, path,
+    message: message || `Delete ${path}`,
+    branch: branch || "main",
+    sha
+  });
 }
 
-async function run() {
+function prettyMove(mv) {
+  const s = mv.from, d = mv.to;
+  return `${s.owner}/${s.repo}@${s.ref || "main"}:${s.path} → ${d.owner}/${d.repo}@${d.ref || "main"}:${d.path}`;
+}
+
+(async () => {
   const plan = await loadPlan();
-  if (!plan.length) {
-    console.log("No relocations to perform.");
+  if (!Array.isArray(plan) || plan.length === 0) {
+    console.log("No moves in plan. Provide PLAN JSON or PLAN_PATH.");
     return;
   }
 
-  console.log(`Relocating ${plan.length} file(s) -> ${TARGET_OWNER}/${TARGET_REPO}@${TARGET_BRANCH}`);
+  const results = [];
+  for (const mv of plan) {
+    console.log(`\n=== ${prettyMove(mv)} ===`);
+    const src = mv.from, dst = mv.to;
+    const message = mv.message || `Relocate ${src.path} → ${dst.path}`;
 
-  for (const item of plan) {
-    const srcOwner = item.src_owner;
-    const srcRepo  = item.src_repo;
-    const srcPath  = item.src_path;
-    const dstPath  = item.dst_path;
-    const msg      = item.message || `Relocate ${srcRepo}/${srcPath} -> ${TARGET_REPO}/${dstPath}`;
+    // 1) Read source
+    const srcFile = await getFile(src.owner, src.repo, src.path, src.ref || "main");
+    if (!srcFile) {
+      results.push({ move: mv, ok: false, reason: "source-not-found" });
+      console.error("Source file not found.");
+      continue;
+    }
+    const contentB64 = normalizeBase64(srcFile.content);
 
-    console.log(`\n→ ${msg}`);
+    // 2) Check if destination exists (to get SHA for update)
+    const dstFile = await getFile(dst.owner, dst.repo, dst.path, dst.ref || "main");
+    const dstSha = dstFile ? dstFile.sha : undefined;
 
-    // 1) Read source file (base64)
-    const src = await getFile(octokit, srcOwner, srcRepo, "main", srcPath);
-    if (!src.exists) {
-      console.warn(`  ✖ Source not found: ${srcOwner}/${srcRepo}/${srcPath}`);
+    // 3) Write destination
+    try {
+      await putFile({
+        owner: dst.owner, repo: dst.repo, path: dst.path,
+        branch: dst.ref || "main",
+        message, contentB64, sha: dstSha
+      });
+      console.log("Wrote destination:", `${dst.repo}/${dst.path}`, dstSha ? "(updated)" : "(created)");
+    } catch (e) {
+      console.error("Write failed:", e.status, e.message);
+      results.push({ move: mv, ok: false, reason: "dest-write-failed", detail: e.message });
       continue;
     }
 
-    // 2) Write to destination (create or update) WITH sha when needed
-    await putFile(octokit, TARGET_OWNER, TARGET_REPO, TARGET_BRANCH, dstPath, src.content, msg);
-    console.log(`  ✓ Wrote ${TARGET_REPO}/${dstPath}`);
+    // 4) Optionally delete source
+    if (mv.deleteSource) {
+      try {
+        await deleteFile({
+          owner: src.owner, repo: src.repo, path: src.path,
+          branch: src.ref || "main",
+          message: `Relocate: remove ${src.path}`,
+          sha: srcFile.sha
+        });
+        console.log("Deleted source:", `${src.repo}/${src.path}`);
+      } catch (e) {
+        console.warn("Delete source failed:", e.status, e.message);
+        results.push({ move: mv, ok: true, warn: "delete-failed", detail: e.message });
+        continue;
+      }
+    }
 
-    // 3) Delete the source (requires its sha)
-    await deleteFile(octokit, srcOwner, srcRepo, "main", srcPath, src.sha, `Remove moved file: ${srcPath}`);
-    console.log(`  ✓ Deleted source ${srcOwner}/${srcRepo}/${srcPath}`);
+    results.push({ move: mv, ok: true });
   }
 
-  console.log("\nAll moves completed.");
-}
-
-run().catch(err => {
-  console.error("\nRelocator failed:");
-  console.error(err);
-  process.exit(1);
-});
+  // Summary
+  const ok = results.filter(r => r.ok).length;
+  const fail = results.length - ok;
+  console.log(`\nDone. OK: ${ok}, Failed: ${fail}`);
+  if (fail) {
+    process.exitCode = 1;
+  }
+})();
