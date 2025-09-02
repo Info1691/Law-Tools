@@ -1,0 +1,13 @@
+{
+  "name": "law-tools",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Utility tools for texts.wwwbcb.org: link checking, search helpers, and relocation workflow.",
+  "scripts": {
+    "relocate": "node scripts/relocate.mjs"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.1"
+  }
+}
