@@ -1,76 +1,32 @@
 [
   {
-    "fromRepo": "laws-ui",
-    "fromBranch": "main",
-    "fromPath": "data/laws/jersey/JTL-1984.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/laws/jersey/JTL-1984.txt",
-    "message": "Relocate: Trusts (Jersey) Law 1984"
+    "s": {"owner":"info1691","repo":"laws-ui","ref":"main","path":"data/laws/jersey/JTL-1984.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/laws/jersey/JTL-1984.txt"}
   },
   {
-    "fromRepo": "laws-ui",
-    "fromBranch": "main",
-    "fromPath": "data/laws/jersey/Companies (Jersey) Law 1991.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/laws/jersey/Companies (Jersey) Law 1991.txt",
-    "message": "Relocate: Companies (Jersey) Law 1991"
+    "s": {"owner":"info1691","repo":"laws-ui","ref":"main","path":"data/laws/jersey/Companies (Jersey) Law 1991.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/laws/jersey/Companies (Jersey) Law 1991.txt"}
   },
   {
-    "fromRepo": "laws-ui",
-    "fromBranch": "main",
-    "fromPath": "data/laws/jersey/Financial Services (Jersey) Law 1998.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/laws/jersey/Financial Services (Jersey) Law 1998.txt",
-    "message": "Relocate: Financial Services (Jersey) Law 1998"
-  },
-  {
-    "fromRepo": "rules-ui",
-    "fromBranch": "main",
-    "fromPath": "data/rules/jersey/JFSC-Code-Of-Practise.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/rules/jersey/JFSC-Code-Of-Practise.txt",
-    "message": "Relocate: JFSC Code of Practice for Trustees"
-  },
-  {
-    "fromRepo": "rules-ui",
-    "fromBranch": "main",
-    "fromPath": "data/rules/uk/sra-code.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/rules/uk/sra-code.txt",
-    "message": "Relocate: SRA Code of Conduct 2019"
-  },
-  {
-    "fromRepo": "rules-ui",
-    "fromBranch": "main",
-    "fromPath": "data/rules/uk/icaew-code.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/rules/uk/icaew-code.txt",
-    "message": "Relocate: ICAEW Code of Ethics"
+    "s": {"owner":"info1691","repo":"laws-ui","ref":"main","path":"data/laws/jersey/Financial Services (Jersey) Law 1998.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/laws/jersey/Financial Services (Jersey) Law 1998.txt"}
   },
 
-  /* === NEW: the two red textbook sources from lex-ingest-local === */
   {
-    "fromRepo": "lex-ingest-local",
-    "fromBranch": "main",
-    "fromPath": "law-index/texts/uk/breach-of-trust-text-by-birks-and-pretto.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/textbooks/uk/breach-of-trust-text-by-birks-and-pretto.txt",
-    "message": "Relocate: Breach of Trust (Birks & Pretto) to canonical textbooks folder"
+    "s": {"owner":"info1691","repo":"rules-ui","ref":"main","path":"data/rules/uk/icaew-code.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/rules/uk/icaew-code.txt"}
   },
   {
-    "fromRepo": "lex-ingest-local",
-    "fromBranch": "main",
-    "fromPath": "law-index/texts/jersey/litigating-trust-disputes-in-jersey.txt",
-    "toRepo": "Law-Texts-ui",
-    "toBranch": "main",
-    "toPath": "data/textbooks/jersey/litigating-trust-disputes-in-jersey.txt",
-    "message": "Relocate: Litigating Trust Disputes in Jersey (TXT) to canonical textbooks folder"
+    "s": {"owner":"info1691","repo":"rules-ui","ref":"main","path":"data/rules/jersey/JFSC-Code-Of-Practise.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/rules/jersey/JFSC-Code-Of-Practise.txt"}
+  },
+  {
+    "s": {"owner":"info1691","repo":"rules-ui","ref":"main","path":"data/rules/uk/sra-code.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/rules/uk/sra-code.txt"}
+  },
+
+  {
+    "s": {"owner":"info1691","repo":"lex-ingest-local","ref":"main","path":"law-index/texts/jersey/litigating-trust-disputes-in-jersey.txt"},
+    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/textbooks/jersey/litigating-trust-disputes-in-jersey.txt"}
   }
 ]
