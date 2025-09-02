@@ -1,250 +1,194 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TXT Locator — repositories scanner</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>.txt Locator — Law Tools</title>
 <style>
-  :root { --fg:#0b1221; --muted:#6b7280; --ok:#0a7f47; --warn:#b45309; --bad:#b91c1c; --chip:#eef2ff; --bg:#f8fafc; --line:#e5e7eb; }
-  html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
-  header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:14px 16px;z-index:5}
-  h1{margin:0 0 6px 0;font-size:18px}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  label{font-size:12px;color:var(--muted)}
-  input[type=text],textarea{border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:#fff;min-width:240px}
-  textarea{min-width:420px;min-height:72px}
-  .btn{border:1px solid #1f2937;background:#111827;color:#fff;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer}
-  .btn.link{background:#fff;color:#111827}
-  .btn:disabled{opacity:.4;cursor:not-allowed}
-  main{padding:18px;max-width:1400px;margin:0 auto}
-  .summary{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 14px 0}
-  .chip{background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:12px}
-  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
-  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line)}
-  th,td{border-top:1px solid var(--line);padding:10px 10px;text-align:left;vertical-align:top}
-  th{background:#f9fafb;font-size:12px;color:#374151}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
-  .tag{display:inline-block;margin-right:6px;padding:2px 6px;border-radius:6px;border:1px solid var(--line);background:#fafafa;font-size:11px;color:#374151}
-  .dup{background:#fff7ed}
-  .r{white-space:nowrap}
-  .footer{color:var(--muted);font-size:12px;margin-top:12px}
-  details{background:#fff;border:1px solid var(--line);border-radius:8px}
-  details>summary{cursor:pointer;padding:10px 12px;font-weight:600}
-  .box{padding:10px 12px;border-top:1px solid var(--line)}
+  body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:#0b2239}
+  header{background:#0b2239;color:#fff;padding:14px 16px}
+  header a{color:#fff;text-decoration:none;opacity:.8}
+  main{max-width:1100px;margin:18px auto;padding:0 12px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  input,select,button{font:inherit}
+  input[type="text"]{padding:8px 10px;border:1px solid #d0d7de;border-radius:8px;min-width:260px;background:#fff}
+  button{background:#0d6efd;color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  th,td{padding:10px;border-bottom:1px solid #eef2f6;vertical-align:top}
+  th{background:#f3f6fb;text-align:left;font-weight:600}
+  tr:hover td{background:#fafcff}
+  .muted{color:#5b6b7b}
+  code{background:#f3f6fb;padding:2px 6px;border-radius:6px}
+  .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-size:12px;margin-right:6px;background:#eef6ff;color:#0d6efd}
+  .pill{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px;background:#e9f5ee;color:#267a4a}
+  .danger{background:#fde8e8;color:#b42318}
+  .right{float:right}
 </style>
 </head>
 <body>
 <header>
-  <h1>TXT Locator — find every .txt across repos</h1>
-  <div class="row" style="margin-top:8px">
-    <div>
-      <label>Owner / org</label><br/>
-      <input id="owner" type="text" value="info1691" />
-    </div>
-    <div style="flex:1 1 520px;min-width:320px">
-      <label>Repos to scan (comma-separated)</label><br/>
-      <textarea id="repos">Law-Tools, Law-Texts-ui, lex-ingest-local</textarea>
-    </div>
-    <div>
-      <label>Optional GitHub token (avoids rate limits; kept only in memory)</label><br/>
-      <input id="token" type="text" placeholder="ghp_… (optional)"/>
-    </div>
-    <div>
-      <label>&nbsp;</label><br/>
-      <button id="scan" class="btn">Scan now</button>
-      <button id="export" class="btn link" disabled>Export CSV</button>
-    </div>
-  </div>
-  <div class="row" style="margin-top:6px">
-    <div class="chip">Canonical folders: <span class="mono">data/textbooks/**, data/laws/**, data/rules/**</span> or <span class="mono">law-index/texts/**</span></div>
-    <div class="chip">Duplicates highlighted</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div><strong>.txt Locator</strong> — find normalized text files across repos</div>
+    <div><a href="./index.html">← Back to tools</a></div>
   </div>
 </header>
-
 <main>
-  <div id="summary" class="summary"></div>
+  <div class="controls">
+    <input id="filter" type="text" placeholder="Filter by filename… (e.g., lewin, birks, jersey)">
+    <button id="scanBtn">Scan now</button>
+    <span class="muted" id="status"></span>
+  </div>
 
-  <table id="tbl">
+  <table id="results">
     <thead>
       <tr>
-        <th>#</th>
-        <th>Repo</th>
-        <th>Branch</th>
-        <th>Path</th>
-        <th>Category</th>
+        <th>File</th>
+        <th>Repo / Path</th>
         <th>Jurisdiction</th>
-        <th>Canonical?</th>
-        <th class="r">Links</th>
+        <th>Size</th>
+        <th>Open</th>
+        <th>Canonical destination</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
 
-  <details style="margin-top:14px">
-    <summary>How this works / what to do next</summary>
-    <div class="box">
-      <ul>
-        <li>Uses the GitHub <em>tree API</em> per repo (fast, 1 request per repo + 1 for default branch). With no token, you have ~60 requests/hour.</li>
-        <li>Shows every <span class="mono">.txt</span>. Category is guessed from the path:
-          <span class="tag">textbooks</span> if path contains <span class="mono">/textbooks/</span>,
-          <span class="tag">laws</span> if <span class="mono">/laws/</span>,
-          <span class="tag">rules</span> if <span class="mono">/rules/</span>, otherwise <span class="tag">unknown</span>.
-        </li>
-        <li><strong>Canonical</strong> = in <span class="mono">data/textbooks/**</span>, <span class="mono">data/laws/**</span>, <span class="mono">data/rules/**</span> (for Law-Texts-ui), or <span class="mono">law-index/texts/**</span> (for lex-ingest-local).</li>
-        <li>Use the "Open raw" link to eyeball content quality (normalised vs PDF artefacts) before moving.</li>
-        <li>Click “Export CSV” to get a move plan (repo, path, guessed category/jurisdiction, canonical flag, raw URL).</li>
-      </ul>
-    </div>
-  </details>
-
-  <div class="footer">Built for locating authoritative TXT before wiring catalogs & search.</div>
+  <p class="muted" style="margin-top:12px">
+    Canonical textbook location is <code>Law-Texts-ui/data/textbooks/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code>.
+    Use GitHub’s “Move” to place files exactly there so the search UI and catalogs pick them up.
+  </p>
 </main>
 
 <script>
-(function(){
-  const $ = (sel) => document.querySelector(sel);
-  const ownerEl = $('#owner'), reposEl = $('#repos'), tokenEl = $('#token');
-  const scanBtn = $('#scan'), exportBtn = $('#export');
-  const tbody = document.querySelector('#tbl tbody');
-  const summary = $('#summary');
+const OWNER = 'Info1691';
 
-  async function gh(url, token){
-    const h = { 'Accept': 'application/vnd.github+json' };
-    if (token) h['Authorization'] = 'Bearer ' + token.trim();
-    const r = await fetch(url, { headers: h });
-    if (!r.ok) throw new Error(r.status + ' ' + r.statusText + ' for ' + url);
-    return r.json();
+// Directories we care about (add/remove as needed)
+const TARGETS = [
+  { repo: 'Law-Texts-ui', path: 'data/textbooks/jersey', label:'Textbooks / Jersey' },
+  { repo: 'Law-Texts-ui', path: 'data/textbooks/uk',     label:'Textbooks / UK'     },
+  { repo: 'lex-ingest-local', path: 'law-index/texts/jersey', label:'Ingester / Jersey' },
+  { repo: 'lex-ingest-local', path: 'law-index/texts/uk',     label:'Ingester / UK'     },
+  // optional: shows if sources still sit here (PDFs etc.)
+  { repo: 'lex-ingest-local', path: 'source/jersey', label:'Source / Jersey' },
+  { repo: 'lex-ingest-local', path: 'source/uk',     label:'Source / UK' },
+];
+
+const apiRoot = 'https://api.github.com';
+
+async function ghJSON(url){
+  const r = await fetch(url, { headers: { 'Accept':'application/vnd.github+json' }});
+  if(!r.ok) throw new Error(`${r.status} ${r.statusText} – ${url}`);
+  return r.json();
+}
+
+function prettySize(bytes){
+  if(bytes == null) return '';
+  const u = ['B','KB','MB','GB'];
+  let i = 0, n = bytes;
+  while(n >= 1024 && i < u.length-1){ n/=1024; i++; }
+  return `${n.toFixed(n>=10||i===0?0:1)} ${u[i]}`;
+}
+
+function guessJurisdiction(path){
+  return /\/jersey(\/|$)/i.test(path) ? 'jersey'
+       : /\/uk(\/|$)/i.test(path)     ? 'uk'
+       : '';
+}
+
+function canonicalDest(name, jurisdiction){
+  if(!jurisdiction) jurisdiction = '';
+  return `Law-Texts-ui/data/textbooks/${jurisdiction}/${name}`;
+}
+
+function ghLinks(owner, repo, path){
+  const enc = path.split('/').map(encodeURIComponent).join('/');
+  const web = `https://github.com/${owner}/${repo}/blob/main/${enc}`;
+  const raw = `https://raw.githubusercontent.com/${owner}/${repo}/main/${enc}`;
+  return { web, raw };
+}
+
+async function listTxt(owner, repo, path){
+  const url = `${apiRoot}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=main&per_page=100`;
+  try{
+    const arr = await ghJSON(url);
+    if(!Array.isArray(arr)) return [];
+    return arr.filter(x => x && x.type === 'file' && /\.txt$/i.test(x.name))
+              .map(x => ({ name:x.name, size:x.size, path:`${path}/${x.name}` }));
+  }catch(e){
+    console.warn('List error:', e.message);
+    return []; // silently continue; path may not exist
   }
+}
 
-  async function getDefaultBranch(owner, repo, token){
-    const j = await gh(`https://api.github.com/repos/${owner}/${repo}`, token);
-    return j.default_branch || 'main';
-  }
-
-  async function getTree(owner, repo, branch, token){
-    const j = await gh(`https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`, token);
-    return (j.tree || []).filter(n => n.type === 'blob');
-  }
-
-  function categorize(path){
-    if (path.includes('/textbooks/')) return 'textbooks';
-    if (path.includes('/laws/')) return 'laws';
-    if (path.includes('/rules/')) return 'rules';
-    if (path.includes('law-index/texts/')) return 'text';
-    if (path.includes('/texts/')) return 'texts';
-    return 'unknown';
-  }
-
-  function jurisdiction(path){
-    if (path.match(/\/jersey\//i)) return 'jersey';
-    if (path.match(/\/uk\//i)) return 'uk';
-    return '';
-  }
-
-  function isCanonical(repo, path){
-    const inData = path.startsWith('data/textbooks/') || path.startsWith('data/laws/') || path.startsWith('data/rules/');
-    const inIngest = path.startsWith('law-index/texts/');
-    if (repo.toLowerCase() === 'law-texts-ui') return inData;
-    if (repo.toLowerCase() === 'lex-ingest-local') return inIngest || inData; // allow either
-    return inData || inIngest;
-  }
-
-  function rawUrl(owner, repo, branch, path){
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
-  }
-
-  function uiUrl(owner, repo, branch, path){
-    return `https://github.com/${owner}/${repo}/blob/${branch}/${path}`;
-  }
-
-  function csvEscape(s){ return `"${String(s).replace(/"/g,'""')}"`; }
-
-  scanBtn.addEventListener('click', async ()=>{
-    const owner = ownerEl.value.trim();
-    const token = tokenEl.value.trim();
-    const repos = reposEl.value.split(',').map(s => s.trim()).filter(Boolean);
-    tbody.innerHTML = '';
-    summary.innerHTML = '';
-    exportBtn.disabled = true;
-    scanBtn.disabled = true; scanBtn.textContent = 'Scanning…';
-
-    const rows = [];
-    try{
-      for (const repo of repos){
-        let branch;
-        try{ branch = await getDefaultBranch(owner, repo, token); }
-        catch(e){ addSummary(`Repo ${repo}: ${e.message}`, 'bad'); continue; }
-
-        let tree;
-        try{ tree = await getTree(owner, repo, branch, token); }
-        catch(e){ addSummary(`Tree ${repo}@${branch}: ${e.message}`, 'bad'); continue; }
-
-        const txts = tree.filter(n => n.path.toLowerCase().endsWith('.txt'));
-        addSummary(`${repo}: ${txts.length} .txt`, 'ok');
-
-        for (const n of txts){
-          const cat = categorize(n.path);
-          const jur = jurisdiction(n.path);
-          const canon = isCanonical(repo, n.path);
-          rows.push({
-            repo, branch, path:n.path, cat, jur, canon,
-            raw: rawUrl(owner, repo, branch, n.path),
-            ui: uiUrl(owner, repo, branch, n.path),
-            base: n.path.split('/').pop().toLowerCase()
-          });
-        }
-      }
-
-      // mark duplicates by basename
-      const counts = rows.reduce((m,r)=> (m[r.base]=(m[r.base]||0)+1, m), {});
-      let i=0;
-      for (const r of rows){
-        const tr = document.createElement('tr');
-        if (counts[r.base] > 1) tr.classList.add('dup');
-        tr.innerHTML = `
-          <td class="r">${++i}</td>
-          <td>${r.repo}</td>
-          <td class="mono">${r.branch}</td>
-          <td class="mono">${r.path}</td>
-          <td>${tag(r.cat)}</td>
-          <td>${r.jur ? tag(r.jur) : ''}</td>
-          <td>${r.canon ? '<span class="ok">Yes</span>' : '<span class="warn">No</span>'}</td>
-          <td class="r">
-            <a class="mono" href="${r.ui}" target="_blank" rel="noreferrer">GitHub</a> ·
-            <a class="mono" href="${r.raw}" target="_blank" rel="noreferrer">Open raw</a>
-          </td>`;
-        tbody.appendChild(tr);
-      }
-
-      addSummary(`Total .txt: ${rows.length}`, rows.length ? 'ok' : 'bad');
-
-      exportBtn.disabled = rows.length === 0;
-      exportBtn.onclick = () => {
-        const headers = ['repo','branch','path','category','jurisdiction','canonical','raw_url','github_url'];
-        const lines = [headers.join(',')];
-        for (const r of rows){
-          lines.push([r.repo,r.branch,r.path,r.cat,r.jur,r.canon?'yes':'no',r.raw,r.ui].map(csvEscape).join(','));
-        }
-        const blob = new Blob([lines.join('\n')], {type:'text/csv'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'txt-locator.csv'; a.click();
-        setTimeout(()=>URL.revokeObjectURL(url), 1000);
-      };
-
-    } finally {
-      scanBtn.disabled = false; scanBtn.textContent = 'Scan now';
+async function scan(){
+  const status = document.getElementById('status');
+  status.textContent = 'Scanning GitHub…';
+  const rows = [];
+  for(const t of TARGETS){
+    const files = await listTxt(OWNER, t.repo, t.path);
+    for(const f of files){
+      const jur = guessJurisdiction(f.path);
+      const dest = canonicalDest(f.name, jur);
+      const links = ghLinks(OWNER, t.repo, f.path);
+      rows.push({
+        file: f.name,
+        repo: t.repo,
+        path: f.path,
+        size: f.size,
+        jur,
+        web: links.web,
+        raw: links.raw,
+        dest
+      });
     }
-  });
-
-  function addSummary(text, level){
-    const div = document.createElement('div');
-    div.className = 'chip ' + (level || '');
-    div.textContent = text;
-    summary.appendChild(div);
   }
-  function tag(txt){ return `<span class="tag">${txt}</span>`; }
-})();
+  render(rows);
+  status.textContent = `Found ${rows.length} .txt file(s)`;
+}
+
+function render(rows){
+  const filter = (document.getElementById('filter').value || '').toLowerCase().trim();
+  const tbody = document.querySelector('#results tbody');
+  tbody.innerHTML = '';
+  for(const r of rows){
+    if(filter && !(r.file.toLowerCase().includes(filter) ||
+                   r.path.toLowerCase().includes(filter) ||
+                   r.repo.toLowerCase().includes(filter) ||
+                   r.jur.toLowerCase().includes(filter))) continue;
+
+    const tr = document.createElement('tr');
+
+    const tdFile = document.createElement('td');
+    tdFile.innerHTML = `<span class="badge">.txt</span> <strong>${r.file}</strong>`;
+    tr.appendChild(tdFile);
+
+    const tdRepo = document.createElement('td');
+    tdRepo.innerHTML = `<code>${r.repo}</code><div class="muted">${r.path}</div>`;
+    tr.appendChild(tdRepo);
+
+    const tdJur = document.createElement('td');
+    tdJur.innerHTML = r.jur ? `<span class="pill">${r.jur}</span>` : '<span class="danger">unknown</span>';
+    tr.appendChild(tdJur);
+
+    const tdSize = document.createElement('td');
+    tdSize.textContent = prettySize(r.size);
+    tr.appendChild(tdSize);
+
+    const tdOpen = document.createElement('td');
+    tdOpen.innerHTML = `<a href="${r.web}" target="_blank">GitHub</a> · <a href="${r.raw}" target="_blank">RAW</a>`;
+    tr.appendChild(tdOpen);
+
+    const tdDest = document.createElement('td');
+    tdDest.innerHTML = `<code>${r.dest}</code>`;
+    tr.appendChild(tdDest);
+
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById('scanBtn').addEventListener('click', scan);
+document.getElementById('filter').addEventListener('input', () => scan());
+window.addEventListener('load', scan);
 </script>
 </body>
 </html>
