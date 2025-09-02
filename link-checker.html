@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Catalog link checker</title>
+  <style>
+    :root{--bg:#0d2238;--paper:#fff;--muted:#708198;--ok:#1f9d55;--bad:#d64545}
+    body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;background:#f4f6fb}
+    header{background:var(--bg);color:#fff;padding:16px}
+    header h1{margin:0;font-size:20px}
+    main{max-width:1100px;margin:18px auto;padding:0 14px}
+    table{width:100%;border-collapse:collapse;background:var(--paper)}
+    th,td{padding:10px;border-bottom:1px solid #e6ebf2;vertical-align:top}
+    th{background:#f1f5fb;text-align:left}
+    code, a{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .ok{color:var(--ok);font-weight:600}
+    .bad{color:var(--bad);font-weight:600}
+    .source{white-space:nowrap}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Catalog link checker</h1>
+    <div class="muted">Checks every <code>url_txt</code> in <code>/texts/catalog.json</code>, <code>/laws.json</code>, and <code>/rules.json</code> on <strong>texts.wwwbcb.org</strong>.</div>
+  </header>
+  <main>
+    <table id="results">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Title</th>
+          <th>URL</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
+
+<script>
+(async () => {
+  const catalogs = [
+    { source: 'Textbooks', url: 'https://texts.wwwbcb.org/texts/catalog.json' },
+    { source: 'Laws',      url: 'https://texts.wwwbcb.org/laws.json' },
+    { source: 'Rules',     url: 'https://texts.wwwbcb.org/rules.json' },
+  ];
+
+  const tbody = document.querySelector('#results tbody');
+
+  const check = async (href) => {
+    try {
+      // Small ranged GET avoids downloading entire TXT
+      const res = await fetch(href, { headers: { 'Range': 'bytes=0-0' } });
+      if (res.ok) return { ok: true, status: res.status };
+      return { ok: false, status: res.status };
+    } catch (e) {
+      return { ok: false, status: e.message };
+    }
+  };
+
+  const addRow = (source, title, url, ok, status) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="source">${source}</td>
+      <td>${title || '<span class="muted">(untitled)</span>'}</td>
+      <td><a href="${url}" target="_blank" rel="noopener">${url}</a></td>
+      <td class="${ok ? 'ok' : 'bad'}">${ok ? 'OK' : 'Not found'} <span class="muted">(${status})</span></td>
+    `;
+    tbody.appendChild(tr);
+  };
+
+  for (const cat of catalogs) {
+    let items = [];
+    try {
+      const r = await fetch(cat.url);
+      const json = await r.json();
+      // Both formats supported: {items:[...]} or [...]
+      items = Array.isArray(json) ? json : (json.items || []);
+    } catch (e) {
+      addRow(cat.source, '[Catalog load failed]', cat.url, false, e.message);
+      continue;
+    }
+
+    for (const it of items) {
+      const title = it.title || it.name || '';
+      const url = it.url_txt || it.url || '';
+      if (!url) { addRow(cat.source, title, '(missing url_txt)', false, 'no url_txt'); continue; }
+
+      // Support relative paths in catalog (./data/...)
+      const absolute = url.startsWith('http') ? url : new URL(url, cat.url).href;
+      const { ok, status } = await check(absolute);
+      addRow(cat.source, title, absolute, ok, status);
+    }
+  }
+})();
+</script>
+</body>
+</html>
