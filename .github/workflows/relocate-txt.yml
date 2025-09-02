@@ -1,45 +1,38 @@
-name: Relocate TXT
+name: relocate
 
 on:
   workflow_dispatch:
     inputs:
       plan:
-        description: "JSON array of move specs (see scripts/plan.json format)"
+        description: 'JSON array of move instructions'
         required: false
-        type: string
-        default: |
-          [
-            {
-              "src_owner": "Info1691",
-              "src_repo": "rules-ui",
-              "src_path": "data/rules/uk/icaew-code.txt",
-              "dst_path": "data/rules/uk/icaew-code.txt",
-              "message": "Relocate ICAEW code to canonical rules folder"
-            }
-          ]
+        default: ''
+      plan_path:
+        description: 'Optional path to a JSON plan file in repo (e.g., scripts/plan.json)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
 
 jobs:
-  relocate:
+  run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # needed for create/update/delete via API
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Install deps
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Run relocator
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_OWNER: "Info1691"
-          TARGET_REPO: "Law-Texts-ui"
-          TARGET_BRANCH: "main"
-          PLAN: ${{ inputs.plan }}
-        run: npm run relocate
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          PLAN: ${{ github.event.inputs.plan }}
+          PLAN_PATH: ${{ github.event.inputs.plan_path }}
+        run: node scripts/relocate.mjs
