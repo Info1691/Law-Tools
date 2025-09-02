@@ -6,7 +6,7 @@
     "toRepo": "Law-Texts-ui",
     "toBranch": "main",
     "toPath": "data/laws/jersey/JTL-1984.txt",
-    "message": "Relocate: Trusts (Jersey) Law 1984 to canonical location"
+    "message": "Relocate: Trusts (Jersey) Law 1984"
   },
   {
     "fromRepo": "laws-ui",
@@ -52,5 +52,25 @@
     "toBranch": "main",
     "toPath": "data/rules/uk/icaew-code.txt",
     "message": "Relocate: ICAEW Code of Ethics"
+  },
+
+  /* === NEW: the two red textbook sources from lex-ingest-local === */
+  {
+    "fromRepo": "lex-ingest-local",
+    "fromBranch": "main",
+    "fromPath": "law-index/texts/uk/breach-of-trust-text-by-birks-and-pretto.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/textbooks/uk/breach-of-trust-text-by-birks-and-pretto.txt",
+    "message": "Relocate: Breach of Trust (Birks & Pretto) to canonical textbooks folder"
+  },
+  {
+    "fromRepo": "lex-ingest-local",
+    "fromBranch": "main",
+    "fromPath": "law-index/texts/jersey/litigating-trust-disputes-in-jersey.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/textbooks/jersey/litigating-trust-disputes-in-jersey.txt",
+    "message": "Relocate: Litigating Trust Disputes in Jersey (TXT) to canonical textbooks folder"
   }
 ]
