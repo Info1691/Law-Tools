@@ -1,76 +1,43 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>.txt Relocator — tools</title>
-  <link rel="icon" href="logo.png" />
-  <style>
-    body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#0e1525;color:#e7eef7}
-    header{display:flex;gap:.75rem;align-items:center;padding:16px 20px;border-bottom:1px solid #1f2942;background:#0b1220}
-    header img{height:28px;width:28px;border-radius:4px;background:#fff}
-    main{max-width:1000px;margin:24px auto;padding:0 16px}
-    h1{font-size:24px;margin:0 0 8px}
-    .card{background:#111a2e;border:1px solid #243252;border-radius:12px;padding:16px;margin:12px 0}
-    a.btn{display:inline-block;background:#1e90ff;border:0;color:#fff;padding:10px 14px;border-radius:10px;font-weight:600;text-decoration:none}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
-    code{background:#0b1220;border:1px solid #212c45;border-radius:6px;padding:2px 6px}
-    .muted{color:#9bb3d2}
-  </style>
-</head>
-<body>
-<header>
-  <img src="logo.png" alt="logo" />
-  <div>
-    <div style="font-weight:700">Law Tools</div>
-    <div class="muted" style="font-size:12px">Relocate normalized .txt into canonical tree + refresh catalogs</div>
-  </div>
-</header>
+name: Relocate TXT to canonical & refresh catalogs
 
-<main>
-  <h1>.txt Relocator</h1>
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (scan only, no PR)"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
 
-  <div class="card">
-    <p class="muted">Status badge for the relocation workflow:</p>
-    <p>
-      <img alt="status"
-        src="https://github.com/Info1691/Law-Tools/actions/workflows/relocate-txt.yml/badge.svg" />
-    </p>
-    <div class="grid">
-      <div class="card">
-        <h3>Run / view workflow</h3>
-        <p class="muted">Opens the GitHub Actions page where you can trigger the job or see logs.</p>
-        <p><a class="btn" target="_blank"
-          href="https://github.com/Info1691/Law-Tools/actions/workflows/relocate-txt.yml">Open Actions</a></p>
-      </div>
+permissions:
+  contents: read
 
-      <div class="card">
-        <h3>Verify links</h3>
-        <p class="muted">Run the catalog link checker after merging the PR.</p>
-        <p><a class="btn" href="link-checker.html">Catalog link checker</a></p>
-      </div>
+jobs:
+  relocate:
+    runs-on: ubuntu-latest
 
-      <div class="card">
-        <h3>Find .txt</h3>
-        <p class="muted">See where .txt files were discovered across repos (pre-relocation).</p>
-        <p><a class="btn" href="find-text.html">.txt locator</a></p>
-      </div>
+    steps:
+      - name: Checkout Law-Tools (this repo)
+        uses: actions/checkout@v4
 
-      <div class="card">
-        <h3>Search</h3>
-        <p class="muted">Search via <code>texts.wwwbcb.org</code> once the catalogs point to canonical URLs.</p>
-        <p><a class="btn" target="_blank" href="https://texts.wwwbcb.org/search.html">Open Search</a></p>
-      </div>
-    </div>
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-    <p class="muted" style="margin-top:12px">
-      Requires repo secret <code>TEXTS_RW_TOKEN</code> (write to <code>Info1691/Law-Texts-ui</code>).<br/>
-      The job opens a PR in <code>Law-Texts-ui</code> relocating files under
-      <code>data/textbooks/&lt;jurisdiction&gt;/</code>, <code>data/laws/&lt;jurisdiction&gt;/</code>,
-      <code>data/rules/&lt;jurisdiction&gt;/</code> and refreshes <code>texts/catalog.json</code>,
-      <code>laws.json</code>, <code>rules.json</code>.
-    </p>
-  </div>
-</main>
-</body>
-</html>
+      - name: Install deps (Octokit)
+        run: |
+          npm init -y
+          npm install @octokit/rest
+
+      - name: Run relocator
+        env:
+          GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CANONICAL_OWNER: Info1691
+          CANONICAL_REPO: Law-Texts-ui
+          CANONICAL_BRANCH: main
+          SITE_BASE: https://texts.wwwbcb.org
+        run: |
+          node scripts/relocate.mjs
