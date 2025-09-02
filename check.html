@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Law Index — Link Checker</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{--ok:#0a7d2c;--warn:#b26b00;--err:#b42318;--muted:#6e7781;--bd:#d0d7de}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;margin:0;background:#f6f8fa;color:#24292f}
+    header{background:#0b2a3f;color:#fff;padding:16px 20px}
+    header h1{margin:0;font-size:20px}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:10px 0 16px}
+    .small{color:var(--muted);font-size:14px}
+    input[type=url]{flex:1;min-width:280px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:#fff}
+    button{padding:9px 14px;border:0;border-radius:8px;background:#0b2a3f;color:#fff;cursor:pointer}
+    table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--bd);vertical-align:top}
+    th{background:#f0f3f6;text-align:left;font-weight:600}
+    tr:last-child td{border-bottom:0}
+    .pill{font-size:12px;border:1px solid var(--bd);border-radius:999px;padding:2px 8px;display:inline-block;color:#111}
+    .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+    .muted{color:var(--muted)}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; font-size:12px}
+    .tight{line-height:1.25}
+    .right{text-align:right}
+    .nowrap{white-space:nowrap}
+  </style>
+</head>
+<body>
+  <header><h1>Law Index — Link Checker</h1></header>
+  <div class="wrap">
+    <p class="small">
+      Checks every <code>url_txt</code> in the catalogs and issues a small ranged request (1KB) to avoid full downloads.
+      Override catalogs via <code>?textbooks=…&amp;laws=…&amp;rules=…</code>
+    </p>
+
+    <div class="row">
+      <label class="small">Textbooks</label>
+      <input id="uTextbooks" type="url" placeholder="Textbooks catalog URL">
+    </div>
+    <div class="row">
+      <label class="small">Laws</label>
+      <input id="uLaws" type="url" placeholder="Laws catalog URL">
+    </div>
+    <div class="row">
+      <label class="small">Rules</label>
+      <input id="uRules" type="url" placeholder="Rules catalog URL">
+    </div>
+    <div class="row">
+      <button id="run">Run checks</button>
+      <span id="summary" class="small muted"></span>
+    </div>
+
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Title</th>
+          <th>URL</th>
+          <th class="right nowrap">HTTP</th>
+          <th class="right nowrap">Time</th>
+          <th class="right nowrap">Size</th>
+          <th class="nowrap">Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+const DEFAULTS = {
+  textbooks: 'https://info1691.github.io/law-index/catalogs/ingest-catalog.json',
+  laws:      'https://info1691.github.io/law-index/laws.json',
+  rules:     'https://info1691.github.io/law-index/rules.json'
+};
+
+const $ = sel => document.querySelector(sel);
+const tbody = $('#tbl tbody');
+const sumEl = $('#summary');
+const u = new URL(location.href);
+const qp = (k,d) => u.searchParams.get(k) || d;
+
+$('#uTextbooks').value = qp('textbooks', DEFAULTS.textbooks);
+$('#uLaws').value      = qp('laws',      DEFAULTS.laws);
+$('#uRules').value     = qp('rules',     DEFAULTS.rules);
+
+function esc(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]) ); }
+function fmtBytes(n){ if(!n||isNaN(n)) return '—'; const kb=n/1024; return (kb<1024?`${kb.toFixed(1)} KB`:`${(kb/1024).toFixed(1)} MB`); }
+function fmtMs(n){ return (n>=1000? (n/1000).toFixed(2)+' s' : n+' ms'); }
+
+async function fetchJSON(url){
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error(`${url} → ${r.status}`);
+  return await r.json();
+}
+
+async function probe(url){
+  const t0 = performance.now();
+  let code=0, size=null, ok=false, note='';
+  try{
+    const r = await fetch(url, {
+      method:'GET',
+      cache:'no-store',
+      headers: {'Range':'bytes=0-1024'}
+    });
+    code = r.status;
+    ok = r.ok || (code===206);
+    size = parseInt(r.headers.get('content-length')||'0',10) || null;
+    try { await r.arrayBuffer(); } catch(_){}
+  }catch(e){
+    note = e.message || 'fetch error';
+  }
+  const t = performance.now() - t0;
+  return {ok, code, size, ms:Math.round(t), note};
+}
+
+function addRow({source,title,url,code,ms,size,ok,note}){
+  const cls = ok ? 'ok' : 'err';
+  const status = ok ? 'OK' : (note || 'Not found');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="tight">${esc(source)}</td>
+    <td class="tight">${esc(title||'—')}</td>
+    <td class="mono"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></td>
+    <td class="right nowrap">${code||'—'}</td>
+    <td class="right nowrap">${fmtMs(ms)}</td>
+    <td class="right nowrap">${fmtBytes(size)}</td>
+    <td class="${cls} nowrap"><span class="pill ${cls}">${esc(status)}</span></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+async function checkCatalog(label, url){
+  let list=[];
+  try{
+    list = await fetchJSON(url);
+  }catch(e){
+    addRow({source:label,title:`Catalog error`,url,code:0,ms:0,size:null,ok:false,note:e.message});
+    return {ok:0,err:1};
+  }
+
+  let ok=0, err=0;
+  for(const item of list){
+    const t = item.title || item.name || '(untitled)';
+    const u = item.url_txt;
+    if(!u){
+      addRow({source:label,title:t,url:'(missing url_txt)',code:0,ms:0,size:null,ok:false,note:'No url_txt'});
+      err++; continue;
+    }
+    const res = await probe(u);
+    addRow({source:label,title:t,url:u,...res});
+    res.ok ? ok++ : err++;
+  }
+  return {ok,err};
+}
+
+async function run(){
+  tbody.innerHTML='';
+  sumEl.textContent='Running…';
+
+  const next = new URL(location.href);
+  next.searchParams.set('textbooks', $('#uTextbooks').value.trim());
+  next.searchParams.set('laws',      $('#uLaws').value.trim());
+  next.searchParams.set('rules',     $('#uRules').value.trim());
+  history.replaceState({}, '', next.toString());
+
+  let totals = {ok:0, err:0};
+  for(const [label, inputId] of [['Textbooks','#uTextbooks'],['Laws','#uLaws'],['Rules','#uRules']]){
+    const url = document.querySelector(inputId).value.trim();
+    const r = await checkCatalog(label, url);
+    totals.ok += r.ok; totals.err += r.err;
+  }
+  sumEl.textContent = `Done — OK: ${totals.ok} · Errors: ${totals.err}`;
+}
+
+$('#run').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>
