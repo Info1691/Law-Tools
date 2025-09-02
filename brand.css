@@ -1,0 +1,7 @@
+/* brand.css — full, drop-in */
+:root{--brand:#0b2239;--ink:#0b2239}
+body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:var(--ink)}
+header.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--brand);color:#fff}
+a.brand{display:inline-flex;align-items:center;gap:10px;color:#fff;text-decoration:none}
+a.brand strong{font-weight:700}
+.brand img{height:28px;width:auto;background:#fff;padding:2px 4px;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.08) inset}
