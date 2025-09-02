@@ -3,35 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>.txt Locator — Law Tools</title>
+<title>.txt Locator — textbooks + laws + rules across repos</title>
 <style>
-  :root{--bg:#0b2239;--ink:#0b2239;--muted:#5b6b7b;--card:#fff;--line:#eef2f6;--shadow:0 1px 3px rgba(0,0,0,.08);--blue:#0d6efd;--green:#267a4a;--red:#b42318;}
+  :root{--bg:#0b2239;--ink:#0b2239;--muted:#5b6b7b;--card:#fff;--line:#eef2f6;--shadow:0 1px 3px rgba(0,0,0,.08);--blue:#0d6efd;--green:#267a4a;--red:#b42318;--gold:#7a5a00;--vio:#4527a0;--teal:#046c7a}
   body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:var(--ink)}
   header{background:var(--bg);color:#fff;padding:14px 16px}
   header a{color:#fff;text-decoration:none;opacity:.85}
   main{max-width:1200px;margin:18px auto;padding:0 12px}
   .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
   input[type="text"]{padding:8px 10px;border:1px solid #d0d7de;border-radius:8px;min-width:280px;background:#fff}
-  select,button{font:inherit}
-  button{background:var(--blue);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
-  button.ghost{background:#e9eef6;color:#0b2239}
   label{color:var(--muted)}
+  button{font:inherit;background:var(--blue);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.ghost{background:#e9eef6;color:#0b2239}
+  .muted{color:var(--muted)}
   table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
   th,td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
   th{background:#f3f6fb;text-align:left;font-weight:600}
   tr:hover td{background:#fafcff}
-  .muted{color:var(--muted)}
   code{background:#f3f6fb;padding:2px 6px;border-radius:6px}
   .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-size:12px;margin-right:6px;background:#eef6ff;color:#0d6efd}
   .kind{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px;margin-right:6px}
   .k-textbook{background:#e9f5ee;color:var(--green)}
-  .k-law{background:#fff3d4;color:#7a5a00}
-  .k-rule{background:#f0e9ff;color:#4527a0}
-  .k-ingester{background:#e8fbff;color:#046c7a}
+  .k-law{background:#fff3d4;color:var(--gold)}
+  .k-rule{background:#f0e9ff;color:var(--vio)}
+  .k-ingester{background:#e8fbff;color:var(--teal)}
   .k-source{background:#fde8e8;color:var(--red)}
   .danger{background:#fde8e8;color:var(--red);padding:2px 6px;border-radius:6px}
-  .row-actions a{margin-right:8px}
-  .right{float:right}
   .small{font-size:12px}
 </style>
 </head>
@@ -76,32 +73,32 @@
 
 <script>
 const OWNER = 'Info1691';
-
-// directories to scan
-const TARGETS = [
-  // textbooks (UI)
-  { repo:'Law-Texts-ui', path:'data/textbooks/jersey', label:'Textbooks / Jersey' },
-  { repo:'Law-Texts-ui', path:'data/textbooks/uk',     label:'Textbooks / UK'     },
-  // laws (UI)
-  { repo:'Law-Texts-ui', path:'data/laws/jersey',      label:'Laws / Jersey'      },
-  { repo:'Law-Texts-ui', path:'data/laws/uk',          label:'Laws / UK'          },
-  // rules (UI)
-  { repo:'Law-Texts-ui', path:'data/rules/jersey',     label:'Rules / Jersey'     },
-  { repo:'Law-Texts-ui', path:'data/rules/uk',         label:'Rules / UK'         },
-  // ingester outputs (often where big books land)
-  { repo:'lex-ingest-local', path:'law-index/texts/jersey', label:'Ingester / Jersey' },
-  { repo:'lex-ingest-local', path:'law-index/texts/uk',     label:'Ingester / UK'     },
-  // sources (PDFs etc.) — useful to spot leftovers
-  { repo:'lex-ingest-local', path:'source/jersey', label:'Source / Jersey' },
-  { repo:'lex-ingest-local', path:'source/uk',     label:'Source / UK' }
-];
-
 const apiRoot = 'https://api.github.com';
+
+// Base locations we’ll probe in every repo (one level deep)
+const BASES = [
+  {base:'data/textbooks', kind:'textbook'},
+  {base:'data/laws',      kind:'law'},
+  {base:'data/rules',     kind:'rule'},
+  {base:'law-index/texts',kind:'ingester'},
+  {base:'source',         kind:'source'} // PDFs / leftovers
+];
 
 async function ghJSON(url){
   const r = await fetch(url,{headers:{'Accept':'application/vnd.github+json'}});
   if(!r.ok) throw new Error(`${r.status} ${r.statusText} – ${url}`);
   return r.json();
+}
+
+async function listRepos(){
+  // cache repo list for this session to be gentle on rate limits
+  const cacheKey = 'lt-repos';
+  const cached = sessionStorage.getItem(cacheKey);
+  if(cached){ try{ return JSON.parse(cached); }catch{} }
+  const arr = await ghJSON(`${apiRoot}/users/${OWNER}/repos?per_page=100&type=owner&sort=updated`);
+  const names = arr.map(r => r.name);
+  sessionStorage.setItem(cacheKey, JSON.stringify(names));
+  return names;
 }
 
 function prettySize(bytes){
@@ -111,80 +108,84 @@ function prettySize(bytes){
   return `${n.toFixed(n>=10||i===0?0:1)} ${u[i]}`;
 }
 
-function detectKind(path){
-  if(/data\/textbooks\//i.test(path)) return 'textbook';
-  if(/data\/laws\//i.test(path))      return 'law';
-  if(/data\/rules\//i.test(path))     return 'rule';
-  if(/law-index\/texts\//i.test(path))return 'ingester';
-  if(/\/source\//i.test(path))        return 'source';
-  return 'unknown';
+function ghLinks(repo, path){
+  const enc = path.split('/').map(encodeURIComponent).join('/');
+  return {
+    web:`https://github.com/${OWNER}/${repo}/blob/main/${enc}`,
+    raw:`https://raw.githubusercontent.com/${OWNER}/${repo}/main/${enc}`
+  };
+}
+
+function detectJur(path){
+  const m = path.match(/\/(jersey|uk)(\/|$)/i);
+  return m ? m[1].toLowerCase() : '';
 }
 
 function kindBadge(kind){
-  const map={
-    textbook:'k-textbook', law:'k-law', rule:'k-rule',
-    ingester:'k-ingester', source:'k-source', unknown:'danger'
-  };
+  const map={textbook:'k-textbook',law:'k-law',rule:'k-rule',ingester:'k-ingester',source:'k-source'};
   const cls = map[kind]||'danger';
   const label = kind.charAt(0).toUpperCase()+kind.slice(1);
   return `<span class="kind ${cls}">${label}</span>`;
 }
 
-function guessJurisdiction(path){
-  return /\/jersey(\/|$)/i.test(path) ? 'jersey'
-       : /\/uk(\/|$)/i.test(path)     ? 'uk'
-       : '';
-}
-
-function canonicalDest(kind, name, jur){
+function canonical(kind,name,jur){
   if(!jur) jur='';
   if(kind==='textbook') return `Law-Texts-ui/data/textbooks/${jur}/${name}`;
   if(kind==='law')      return `Law-Texts-ui/data/laws/${jur}/${name}`;
   if(kind==='rule')     return `Law-Texts-ui/data/rules/${jur}/${name}`;
-  // ingester/source → we still funnel to textbooks unless you later add laws/rules ingester dirs
+  // default for ingester/source (textbooks unless you change policy later)
   return `Law-Texts-ui/data/textbooks/${jur}/${name}`;
 }
 
-function ghLinks(owner, repo, path){
-  const enc = path.split('/').map(encodeURIComponent).join('/');
-  return {
-    web:`https://github.com/${owner}/${repo}/blob/main/${enc}`,
-    raw:`https://raw.githubusercontent.com/${owner}/${repo}/main/${enc}`
-  };
-}
-
-async function listTxt(owner, repo, path){
-  const url = `${apiRoot}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=main&per_page=100`;
-  try{
-    const arr = await ghJSON(url);
-    if(!Array.isArray(arr)) return [];
-    return arr.filter(x => x && x.type==='file' && /\.txt$/i.test(x.name))
-              .map(x => ({ name:x.name, size:x.size, path:`${path}/${x.name}` }));
-  }catch(e){
-    // path may not exist — ignore
-    return [];
+async function listTxtIn(repo, base){
+  // try base; if present, list. Then list one level deeper dirs.
+  const out=[];
+  async function ls(path){
+    try{
+      const url = `${apiRoot}/repos/${OWNER}/${repo}/contents/${encodeURIComponent(path)}?ref=main&per_page=100`;
+      const items = await ghJSON(url);
+      if(!Array.isArray(items)) return [];
+      return items;
+    }catch{ return []; }
   }
+  const top = await ls(base);
+  for(const it of top){
+    if(it.type==='file' && /\.txt$/i.test(it.name)){
+      out.push({name:it.name,size:it.size,path:`${base}/${it.name}`});
+    }else if(it.type==='dir'){
+      const sub = await ls(`${base}/${it.name}`);
+      for(const f of sub){
+        if(f.type==='file' && /\.txt$/i.test(f.name)){
+          out.push({name:f.name,size:f.size,path:`${base}/${it.name}/${f.name}`});
+        }
+      }
+    }
+  }
+  return out;
 }
 
 async function scan(){
   const status = document.getElementById('status');
-  status.textContent = 'Scanning GitHub…';
+  status.textContent = 'Enumerating repos…';
+  const repos = await listRepos();
+
   const all=[];
-  for(const t of TARGETS){
-    const files = await listTxt(OWNER, t.repo, t.path);
-    for(const f of files){
-      const kind = detectKind(f.path);
-      const jur  = guessJurisdiction(f.path);
-      const dest = canonicalDest(kind, f.name, jur);
-      const lnks = ghLinks(OWNER, t.repo, f.path);
-      all.push({
-        file:f.name, repo:t.repo, path:f.path, size:f.size,
-        kind, jur, dest, web:lnks.web, raw:lnks.raw
-      });
+  let checked = 0;
+  for(const repo of repos){
+    for(const b of BASES){
+      status.textContent = `Scanning ${repo}/${b.base} …`;
+      const files = await listTxtIn(repo,b.base);
+      for(const f of files){
+        const jur = detectJur(f.path);
+        const dest = canonical(b.kind,f.name,jur);
+        const lnks = ghLinks(repo,f.path);
+        all.push({file:f.name,kind:b.kind,repo,path:f.path,jur,size:f.size,web:lnks.web,raw:lnks.raw,dest});
+      }
     }
+    checked++;
   }
   render(all);
-  status.textContent = `Found ${all.length} .txt file(s)`;
+  status.textContent = `Found ${all.length} .txt file(s) across ${repos.length} repos`;
 }
 
 function render(rows){
@@ -192,11 +193,12 @@ function render(rows){
   const showCmds = document.getElementById('showCmds').checked;
   const tbody = document.querySelector('#results tbody');
   tbody.innerHTML = '';
+  // stable order: Laws, Rules, Textbooks, then others; within that by name
+  const kindOrder = {law:0,rule:1,textbook:2,ingester:3,source:4};
+  rows.sort((a,b)=> (kindOrder[a.kind]-kindOrder[b.kind]) || a.file.localeCompare(b.file));
   for(const r of rows){
-    if(filter && !(r.file.toLowerCase().includes(filter) ||
-                   r.path.toLowerCase().includes(filter) ||
-                   r.repo.toLowerCase().includes(filter) ||
-                   r.jur.toLowerCase().includes(filter)  )) continue;
+    const hay = `${r.file} ${r.repo} ${r.path} ${r.jur} ${r.kind}`.toLowerCase();
+    if(filter && !hay.includes(filter)) continue;
 
     const tr = document.createElement('tr');
 
@@ -221,7 +223,6 @@ function render(rows){
     tr.appendChild(tdSize);
 
     const tdOpen = document.createElement('td');
-    tdOpen.className = 'row-actions';
     const cmd = `git mv ${r.repo}/${r.path} ${r.dest}`;
     tdOpen.innerHTML =
       `<a href="${r.web}" target="_blank">GitHub</a> · `+
