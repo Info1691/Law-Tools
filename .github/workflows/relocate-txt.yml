@@ -1,0 +1,42 @@
+name: Relocate TXT to canonical & refresh catalogs
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (scan + plan only, no PR)"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+jobs:
+  relocate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Law-Tools (this repo)
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: |
+          npm --version
+          echo 'No external deps needed'
+
+      - name: Run relocator
+        env:
+          GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CANONICAL_OWNER: Info1691
+          CANONICAL_REPO: Law-Texts-ui
+          CANONICAL_BRANCH: main
+          SITE_BASE: https://texts.wwwbcb.org
+        run: |
+          node scripts/relocate.mjs
