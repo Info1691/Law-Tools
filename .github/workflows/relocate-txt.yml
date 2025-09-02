@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry-run (scan + plan only, no PR)"
+        description: "Dry-run (scan only, no PR)"
         required: true
         default: "false"
         type: choice
@@ -16,6 +16,7 @@ permissions:
 jobs:
   relocate:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
@@ -25,10 +26,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install deps
+      - name: Install deps (Octokit)
         run: |
-          npm --version
-          echo 'No external deps needed'
+          npm init -y
+          npm install @octokit/rest
 
       - name: Run relocator
         env:
