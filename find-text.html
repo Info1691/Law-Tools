@@ -5,36 +5,48 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>.txt Locator — Law Tools</title>
 <style>
-  body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:#0b2239}
-  header{background:#0b2239;color:#fff;padding:14px 16px}
-  header a{color:#fff;text-decoration:none;opacity:.8}
-  main{max-width:1100px;margin:18px auto;padding:0 12px}
-  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-  input,select,button{font:inherit}
-  input[type="text"]{padding:8px 10px;border:1px solid #d0d7de;border-radius:8px;min-width:260px;background:#fff}
-  button{background:#0d6efd;color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
-  table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.07)}
-  th,td{padding:10px;border-bottom:1px solid #eef2f6;vertical-align:top}
+  :root{--bg:#0b2239;--ink:#0b2239;--muted:#5b6b7b;--card:#fff;--line:#eef2f6;--shadow:0 1px 3px rgba(0,0,0,.08);--blue:#0d6efd;--green:#267a4a;--red:#b42318;}
+  body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:var(--ink)}
+  header{background:var(--bg);color:#fff;padding:14px 16px}
+  header a{color:#fff;text-decoration:none;opacity:.85}
+  main{max-width:1200px;margin:18px auto;padding:0 12px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  input[type="text"]{padding:8px 10px;border:1px solid #d0d7de;border-radius:8px;min-width:280px;background:#fff}
+  select,button{font:inherit}
+  button{background:var(--blue);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.ghost{background:#e9eef6;color:#0b2239}
+  label{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+  th,td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
   th{background:#f3f6fb;text-align:left;font-weight:600}
   tr:hover td{background:#fafcff}
-  .muted{color:#5b6b7b}
+  .muted{color:var(--muted)}
   code{background:#f3f6fb;padding:2px 6px;border-radius:6px}
   .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-size:12px;margin-right:6px;background:#eef6ff;color:#0d6efd}
-  .pill{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px;background:#e9f5ee;color:#267a4a}
-  .danger{background:#fde8e8;color:#b42318}
+  .kind{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px;margin-right:6px}
+  .k-textbook{background:#e9f5ee;color:var(--green)}
+  .k-law{background:#fff3d4;color:#7a5a00}
+  .k-rule{background:#f0e9ff;color:#4527a0}
+  .k-ingester{background:#e8fbff;color:#046c7a}
+  .k-source{background:#fde8e8;color:var(--red)}
+  .danger{background:#fde8e8;color:var(--red);padding:2px 6px;border-radius:6px}
+  .row-actions a{margin-right:8px}
   .right{float:right}
+  .small{font-size:12px}
 </style>
 </head>
 <body>
 <header>
   <div style="display:flex;justify-content:space-between;align-items:center;">
-    <div><strong>.txt Locator</strong> — find normalized text files across repos</div>
+    <div><strong>.txt Locator</strong> — textbooks + laws + rules across repos</div>
     <div><a href="./index.html">← Back to tools</a></div>
   </div>
 </header>
+
 <main>
   <div class="controls">
-    <input id="filter" type="text" placeholder="Filter by filename… (e.g., lewin, birks, jersey)">
+    <input id="filter" type="text" placeholder="Filter (e.g., lewin, birks, jersey, JTL-1984)…">
+    <label><input type="checkbox" id="showCmds"> show move commands</label>
     <button id="scanBtn">Scan now</button>
     <span class="muted" id="status"></span>
   </div>
@@ -43,6 +55,7 @@
     <thead>
       <tr>
         <th>File</th>
+        <th>Kind</th>
         <th>Repo / Path</th>
         <th>Jurisdiction</th>
         <th>Size</th>
@@ -53,40 +66,68 @@
     <tbody></tbody>
   </table>
 
-  <p class="muted" style="margin-top:12px">
-    Canonical textbook location is <code>Law-Texts-ui/data/textbooks/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code>.
-    Use GitHub’s “Move” to place files exactly there so the search UI and catalogs pick them up.
+  <p class="muted small" style="margin-top:12px">
+    Canonical destinations:<br>
+    • Textbooks → <code>Law-Texts-ui/data/textbooks/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code><br>
+    • Laws → <code>Law-Texts-ui/data/laws/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code><br>
+    • Rules → <code>Law-Texts-ui/data/rules/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code>
   </p>
 </main>
 
 <script>
 const OWNER = 'Info1691';
 
-// Directories we care about (add/remove as needed)
+// directories to scan
 const TARGETS = [
-  { repo: 'Law-Texts-ui', path: 'data/textbooks/jersey', label:'Textbooks / Jersey' },
-  { repo: 'Law-Texts-ui', path: 'data/textbooks/uk',     label:'Textbooks / UK'     },
-  { repo: 'lex-ingest-local', path: 'law-index/texts/jersey', label:'Ingester / Jersey' },
-  { repo: 'lex-ingest-local', path: 'law-index/texts/uk',     label:'Ingester / UK'     },
-  // optional: shows if sources still sit here (PDFs etc.)
-  { repo: 'lex-ingest-local', path: 'source/jersey', label:'Source / Jersey' },
-  { repo: 'lex-ingest-local', path: 'source/uk',     label:'Source / UK' },
+  // textbooks (UI)
+  { repo:'Law-Texts-ui', path:'data/textbooks/jersey', label:'Textbooks / Jersey' },
+  { repo:'Law-Texts-ui', path:'data/textbooks/uk',     label:'Textbooks / UK'     },
+  // laws (UI)
+  { repo:'Law-Texts-ui', path:'data/laws/jersey',      label:'Laws / Jersey'      },
+  { repo:'Law-Texts-ui', path:'data/laws/uk',          label:'Laws / UK'          },
+  // rules (UI)
+  { repo:'Law-Texts-ui', path:'data/rules/jersey',     label:'Rules / Jersey'     },
+  { repo:'Law-Texts-ui', path:'data/rules/uk',         label:'Rules / UK'         },
+  // ingester outputs (often where big books land)
+  { repo:'lex-ingest-local', path:'law-index/texts/jersey', label:'Ingester / Jersey' },
+  { repo:'lex-ingest-local', path:'law-index/texts/uk',     label:'Ingester / UK'     },
+  // sources (PDFs etc.) — useful to spot leftovers
+  { repo:'lex-ingest-local', path:'source/jersey', label:'Source / Jersey' },
+  { repo:'lex-ingest-local', path:'source/uk',     label:'Source / UK' }
 ];
 
 const apiRoot = 'https://api.github.com';
 
 async function ghJSON(url){
-  const r = await fetch(url, { headers: { 'Accept':'application/vnd.github+json' }});
+  const r = await fetch(url,{headers:{'Accept':'application/vnd.github+json'}});
   if(!r.ok) throw new Error(`${r.status} ${r.statusText} – ${url}`);
   return r.json();
 }
 
 function prettySize(bytes){
   if(bytes == null) return '';
-  const u = ['B','KB','MB','GB'];
-  let i = 0, n = bytes;
-  while(n >= 1024 && i < u.length-1){ n/=1024; i++; }
+  const u=['B','KB','MB','GB']; let i=0,n=bytes;
+  while(n>=1024&&i<u.length-1){n/=1024;i++}
   return `${n.toFixed(n>=10||i===0?0:1)} ${u[i]}`;
+}
+
+function detectKind(path){
+  if(/data\/textbooks\//i.test(path)) return 'textbook';
+  if(/data\/laws\//i.test(path))      return 'law';
+  if(/data\/rules\//i.test(path))     return 'rule';
+  if(/law-index\/texts\//i.test(path))return 'ingester';
+  if(/\/source\//i.test(path))        return 'source';
+  return 'unknown';
+}
+
+function kindBadge(kind){
+  const map={
+    textbook:'k-textbook', law:'k-law', rule:'k-rule',
+    ingester:'k-ingester', source:'k-source', unknown:'danger'
+  };
+  const cls = map[kind]||'danger';
+  const label = kind.charAt(0).toUpperCase()+kind.slice(1);
+  return `<span class="kind ${cls}">${label}</span>`;
 }
 
 function guessJurisdiction(path){
@@ -95,16 +136,21 @@ function guessJurisdiction(path){
        : '';
 }
 
-function canonicalDest(name, jurisdiction){
-  if(!jurisdiction) jurisdiction = '';
-  return `Law-Texts-ui/data/textbooks/${jurisdiction}/${name}`;
+function canonicalDest(kind, name, jur){
+  if(!jur) jur='';
+  if(kind==='textbook') return `Law-Texts-ui/data/textbooks/${jur}/${name}`;
+  if(kind==='law')      return `Law-Texts-ui/data/laws/${jur}/${name}`;
+  if(kind==='rule')     return `Law-Texts-ui/data/rules/${jur}/${name}`;
+  // ingester/source → we still funnel to textbooks unless you later add laws/rules ingester dirs
+  return `Law-Texts-ui/data/textbooks/${jur}/${name}`;
 }
 
 function ghLinks(owner, repo, path){
   const enc = path.split('/').map(encodeURIComponent).join('/');
-  const web = `https://github.com/${owner}/${repo}/blob/main/${enc}`;
-  const raw = `https://raw.githubusercontent.com/${owner}/${repo}/main/${enc}`;
-  return { web, raw };
+  return {
+    web:`https://github.com/${owner}/${repo}/blob/main/${enc}`,
+    raw:`https://raw.githubusercontent.com/${owner}/${repo}/main/${enc}`
+  };
 }
 
 async function listTxt(owner, repo, path){
@@ -112,49 +158,45 @@ async function listTxt(owner, repo, path){
   try{
     const arr = await ghJSON(url);
     if(!Array.isArray(arr)) return [];
-    return arr.filter(x => x && x.type === 'file' && /\.txt$/i.test(x.name))
+    return arr.filter(x => x && x.type==='file' && /\.txt$/i.test(x.name))
               .map(x => ({ name:x.name, size:x.size, path:`${path}/${x.name}` }));
   }catch(e){
-    console.warn('List error:', e.message);
-    return []; // silently continue; path may not exist
+    // path may not exist — ignore
+    return [];
   }
 }
 
 async function scan(){
   const status = document.getElementById('status');
   status.textContent = 'Scanning GitHub…';
-  const rows = [];
+  const all=[];
   for(const t of TARGETS){
     const files = await listTxt(OWNER, t.repo, t.path);
     for(const f of files){
-      const jur = guessJurisdiction(f.path);
-      const dest = canonicalDest(f.name, jur);
-      const links = ghLinks(OWNER, t.repo, f.path);
-      rows.push({
-        file: f.name,
-        repo: t.repo,
-        path: f.path,
-        size: f.size,
-        jur,
-        web: links.web,
-        raw: links.raw,
-        dest
+      const kind = detectKind(f.path);
+      const jur  = guessJurisdiction(f.path);
+      const dest = canonicalDest(kind, f.name, jur);
+      const lnks = ghLinks(OWNER, t.repo, f.path);
+      all.push({
+        file:f.name, repo:t.repo, path:f.path, size:f.size,
+        kind, jur, dest, web:lnks.web, raw:lnks.raw
       });
     }
   }
-  render(rows);
-  status.textContent = `Found ${rows.length} .txt file(s)`;
+  render(all);
+  status.textContent = `Found ${all.length} .txt file(s)`;
 }
 
 function render(rows){
-  const filter = (document.getElementById('filter').value || '').toLowerCase().trim();
+  const filter = (document.getElementById('filter').value||'').toLowerCase().trim();
+  const showCmds = document.getElementById('showCmds').checked;
   const tbody = document.querySelector('#results tbody');
   tbody.innerHTML = '';
   for(const r of rows){
     if(filter && !(r.file.toLowerCase().includes(filter) ||
                    r.path.toLowerCase().includes(filter) ||
                    r.repo.toLowerCase().includes(filter) ||
-                   r.jur.toLowerCase().includes(filter))) continue;
+                   r.jur.toLowerCase().includes(filter)  )) continue;
 
     const tr = document.createElement('tr');
 
@@ -162,12 +204,16 @@ function render(rows){
     tdFile.innerHTML = `<span class="badge">.txt</span> <strong>${r.file}</strong>`;
     tr.appendChild(tdFile);
 
+    const tdKind = document.createElement('td');
+    tdKind.innerHTML = kindBadge(r.kind);
+    tr.appendChild(tdKind);
+
     const tdRepo = document.createElement('td');
     tdRepo.innerHTML = `<code>${r.repo}</code><div class="muted">${r.path}</div>`;
     tr.appendChild(tdRepo);
 
     const tdJur = document.createElement('td');
-    tdJur.innerHTML = r.jur ? `<span class="pill">${r.jur}</span>` : '<span class="danger">unknown</span>';
+    tdJur.innerHTML = r.jur ? `<code>${r.jur}</code>` : '<span class="danger">unknown</span>';
     tr.appendChild(tdJur);
 
     const tdSize = document.createElement('td');
@@ -175,7 +221,12 @@ function render(rows){
     tr.appendChild(tdSize);
 
     const tdOpen = document.createElement('td');
-    tdOpen.innerHTML = `<a href="${r.web}" target="_blank">GitHub</a> · <a href="${r.raw}" target="_blank">RAW</a>`;
+    tdOpen.className = 'row-actions';
+    const cmd = `git mv ${r.repo}/${r.path} ${r.dest}`;
+    tdOpen.innerHTML =
+      `<a href="${r.web}" target="_blank">GitHub</a> · `+
+      `<a href="${r.raw}" target="_blank">RAW</a>`+
+      (showCmds ? ` · <a href="#" onclick="navigator.clipboard.writeText(${JSON.stringify(cmd)});return false;">copy move cmd</a>` : '');
     tr.appendChild(tdOpen);
 
     const tdDest = document.createElement('td');
@@ -187,7 +238,8 @@ function render(rows){
 }
 
 document.getElementById('scanBtn').addEventListener('click', scan);
-document.getElementById('filter').addEventListener('input', () => scan());
+document.getElementById('filter').addEventListener('input', ()=>scan());
+document.getElementById('showCmds').addEventListener('change', ()=>scan());
 window.addEventListener('load', scan);
 </script>
 </body>
