@@ -1,59 +1,179 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Law Tools</title>
-<style>
-  :root { --bg:#0b2239; --card:#ffffff; --ink:#0b2239; --muted:#5b6b7b; --accent:#0d6efd; }
-  body{margin:0;font:16px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:var(--ink);}
-  header{background:var(--bg);color:#fff;padding:18px 20px;display:flex;align-items:center;gap:12px}
-  header img{height:28px;width:auto;background:#fff;border-radius:4px;padding:4px}
-  main{max-width:960px;margin:24px auto;padding:0 16px}
-  h1{margin:0 0 2px 0;font-size:22px}
-  p.lead{margin:0 0 18px 0;color:#c7d2df}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
-  .card{background:var(--card);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:16px}
-  .card h3{margin:0 0 8px 0;font-size:18px}
-  a.button{display:inline-block;margin-top:8px;background:var(--accent);color:#fff;
-           padding:8px 12px;border-radius:8px;text-decoration:none}
-  .muted{color:var(--muted);font-size:14px}
-  footer{max-width:960px;margin:20px auto 40px;padding:0 16px;color:var(--muted);font-size:13px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Law Tools — utilities for texts.wwwbcb.org</title>
+  <meta name="description" content="Utilities to maintain and search the Trust Law Textbooks site (texts.wwwbcb.org): search texts, check catalog links, locate .txt files across repos, and relocate files to canonical folders." />
+  <link rel="icon" href="logo.png" />
+  <style>
+    :root{
+      --bg:#0f172a;         /* slate-900 */
+      --panel:#0b1229;      /* subtle darker */
+      --card:#111a34;       /* slate + blue mix */
+      --muted:#93a4c4;      /* slate-300 */
+      --text:#e6edff;       /* near-white */
+      --brand:#4f8cff;      /* blue-500 */
+      --brand-2:#22d3ee;    /* cyan-400 */
+      --ok:#22c55e;
+      --warn:#f59e0b;
+      --danger:#ef4444;
+      --shadow: 0 10px 25px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.05) inset;
+      --radius:14px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color:var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(79,140,255,.12), transparent 60%),
+        radial-gradient(900px 500px at 110% 10%, rgba(34,211,238,.10), transparent 60%),
+        linear-gradient(180deg, var(--bg), #0b1120 65%);
+      min-height:100%;
+    }
+    .wrap{max-width:1100px; margin:0 auto; padding:28px 22px 64px}
+    header.nav{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:18px; margin-bottom:22px;
+    }
+    .brand{
+      display:flex; align-items:center; gap:14px;
+      text-decoration:none; color:var(--text);
+    }
+    .brand img{
+      width:40px; height:40px; border-radius:8px;
+      background:#fff; /* ensures white surround even if logo PNG is transparent */
+      padding:4px; box-shadow:var(--shadow);
+      object-fit:contain;
+    }
+    .brand h1{
+      font-size:20px; line-height:1.2; margin:0;
+      font-weight:700; letter-spacing:.2px;
+    }
+    .brand small{display:block; color:var(--muted); font-weight:500}
+    .ext{
+      display:inline-flex; align-items:center; gap:8px;
+      color:var(--brand-2); text-decoration:none; font-weight:600;
+      padding:8px 12px; border-radius:10px; background:rgba(34,211,238,.08);
+      border:1px solid rgba(34,211,238,.25);
+    }
+    .hero{
+      background:linear-gradient(180deg, rgba(79,140,255,.14), rgba(79,140,255,.06));
+      border:1px solid rgba(79,140,255,.25);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:18px 18px 14px; margin:0 0 18px 0;
+    }
+    .hero h2{margin:0 0 6px 0; font-size:18px}
+    .hero p{margin:0; color:var(--muted)}
+    .cards{
+      display:grid; gap:16px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      margin-top:18px;
+    }
+    a.card{
+      position:relative; display:block; text-decoration:none; color:var(--text);
+      padding:18px 16px 16px; border-radius:var(--radius);
+      background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.15)),
+                 var(--card);
+      border:1px solid rgba(148,163,184,.18);
+      box-shadow:var(--shadow); transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+      min-height:140px;
+    }
+    a.card:hover{ transform:translateY(-2px); border-color:rgba(79,140,255,.55); box-shadow:0 16px 35px rgba(4,14,45,.65), 0 1px 0 rgba(255,255,255,.06) inset}
+    .card h3{margin:0 0 8px 0; font-size:18px}
+    .card p{margin:0; color:var(--muted)}
+    .tag{
+      display:inline-block; font:600 12px/1 system-ui; letter-spacing:.2px;
+      padding:6px 8px; border-radius:999px; margin:0 8px 10px 0;
+      background:rgba(79,140,255,.15); color:var(--brand); border:1px solid rgba(79,140,255,.35);
+    }
+    .tag.warn{background:rgba(245,158,11,.14); color:#f8c66a; border-color:rgba(245,158,11,.35)}
+    .tag.ok{background:rgba(34,197,94,.14); color:#9af2b8; border-color:rgba(34,197,94,.32)}
+    footer{
+      margin-top:26px; padding-top:18px; color:var(--muted); font-size:14px;
+      border-top:1px solid rgba(148,163,184,.18);
+      display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    }
+    footer a{color:var(--brand-2); text-decoration:none}
+    .sub{font-size:13px; color:var(--muted)}
+    /* small helper for monospace paths */
+    code.path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:#b9c7e6}
+  </style>
 </head>
 <body>
-  <header>
-    <img src="https://texts.wwwbcb.org/texts/logo.png" alt="Logo">
-    <div>
-      <h1>Law Tools</h1>
-      <p class="lead">Diagnostics and utilities for Trust Law Textbooks workflow.</p>
-    </div>
-  </header>
+  <div class="wrap">
+    <header class="nav">
+      <a class="brand" href="./">
+        <img src="logo.png" alt="Site logo" />
+        <div>
+          <h1>Law Tools</h1>
+          <small>Utilities for <strong>texts.wwwbcb.org</strong></small>
+        </div>
+      </a>
+      <a class="ext" href="https://texts.wwwbcb.org/search.html">Open Texts search ↗</a>
+    </header>
 
-  <main>
-    <div class="grid">
-      <div class="card">
+    <section class="hero">
+      <h2>Maintenance & research tools</h2>
+      <p>
+        Use these to <strong>search TXT</strong>, <strong>verify catalog links</strong>, <strong>locate .txt files</strong> across repos,
+        and <strong>relocate files + refresh catalogs</strong> in <code class="path">Law-Texts-ui</code>.
+      </p>
+    </section>
+
+    <!-- Cards grid -->
+    <section class="cards">
+
+      <!-- Texts Search Tool -->
+      <a class="card" href="texts-search.html">
+        <span class="tag ok">Search</span>
+        <h3>Texts Search Tool</h3>
+        <p>Query across Textbooks (catalog), Laws, and Rules on <strong>texts.wwwbcb.org</strong>. Shows quotable snippets and links to full TXT.</p>
+      </a>
+
+      <!-- Catalog Link Checker -->
+      <a class="card" href="link-checker.html">
+        <span class="tag">Catalogs</span>
         <h3>Catalog link checker</h3>
-        <p class="muted">Verifies every <code>url_txt</code> in <code>/texts/catalog.json</code>, <code>/laws.json</code>, and <code>/rules.json</code> on <em>texts.wwwbcb.org</em>.</p>
-        <a class="button" href="./link-checker.html">Open checker</a>
-      </div>
+        <p>Checks every <code class="path">url_txt</code> in <code class="path">texts/catalog.json</code>, <code class="path">/laws.json</code> and <code class="path">/rules.json</code> for 404s.</p>
+      </a>
 
-      <div class="card">
-        <h3>Texts search tool</h3>
-        <p class="muted">Ad-hoc search over whatever your catalogs currently point to. Great for sanity checks.</p>
-        <a class="button" href="./texts-search.html">Open search</a>
-      </div>
+      <!-- .txt Locator (the new / expanded block inside grid) -->
+      <a class="card" href="find-text.html">
+        <span class="tag">Locator</span>
+        <h3>.txt Locator — textbooks + laws + rules</h3>
+        <p>Scan across repos to find normalized <code>.txt</code> files and see their <em>canonical destinations</em>:
+          <code class="path">Law-Texts-ui/data/textbooks/&lt;jersey|uk&gt;/</code>,
+          <code class="path">/data/laws/&lt;jersey|uk&gt;/</code>,
+          <code class="path">/data/rules/&lt;jersey|uk&gt;/</code>.
+        </p>
+      </a>
 
-      <div class="card">
-        <h3>Locate .txt across repos</h3>
-        <p class="muted">Lists every <code>.txt</code> sitting in <em>Law-Texts-ui</em> and <em>lex-ingest-local</em> so you can move them to the canonical location.</p>
-        <a class="button" href="./find-text.html">Open .txt locator</a>
-      </div>
-    </div>
-  </main>
+      <!-- Relocate TXT + refresh catalogs -->
+      <a class="card" href="relocate.html">
+        <span class="tag warn">Curate</span>
+        <h3>Relocate TXT &amp; refresh catalogs</h3>
+        <p>Opens a PR to move files into canonical folders in <code class="path">Law-Texts-ui</code> and updates <em>texts</em>, <em>laws</em>, and <em>rules</em> catalogs. Requires configured token.</p>
+      </a>
 
-  <footer>
-    Canonical destination for textbooks: <code>Law-Texts-ui/data/textbooks/&lt;jurisdiction&gt;/&lt;filename&gt;.txt</code>.
-  </footer>
+      <!-- Diagnostics: simple fetch check (optional) -->
+      <a class="card" href="check.html">
+        <span class="tag">Diagnostics</span>
+        <h3>Simple fetch check</h3>
+        <p>Give a URL; fetches and shows status/body to help debug path or CORS issues.</p>
+      </a>
+
+    </section>
+
+    <footer>
+      <div class="sub">Canonical destinations: <code class="path">data/textbooks/&lt;jersey|uk&gt;/</code> • <code class="path">data/laws/&lt;jersey|uk&gt;/</code> • <code class="path">data/rules/&lt;jersey|uk&gt;/</code></div>
+      <div class="sub">
+        Need to run the workflow directly? <a href="https://github.com/Info1691/Law-Tools/actions/workflows/relocate-txt.yml">Relocate TXT action ↗</a>
+      </div>
+    </footer>
+  </div>
 </body>
 </html>
