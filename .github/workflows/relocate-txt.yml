@@ -1,22 +1,28 @@
-name: Relocate TXT to canonical & refresh catalogs
+name: Relocate TXT
 
 on:
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: "Dry-run (scan only, no PR)"
-        required: true
-        default: "false"
-        type: choice
-        options: ["false", "true"]
-
-permissions:
-  contents: read
+      plan:
+        description: "JSON array of move specs (see scripts/plan.json format)"
+        required: false
+        type: string
+        default: |
+          [
+            {
+              "src_owner": "Info1691",
+              "src_repo": "rules-ui",
+              "src_path": "data/rules/uk/icaew-code.txt",
+              "dst_path": "data/rules/uk/icaew-code.txt",
+              "message": "Relocate ICAEW code to canonical rules folder"
+            }
+          ]
 
 jobs:
   relocate:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write   # needed for create/update/delete via API
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
@@ -24,20 +30,16 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
 
-      - name: Install deps (Octokit)
-        run: |
-          npm init -y
-          npm install @octokit/rest
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
 
       - name: Run relocator
         env:
-          GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run }}
-          CANONICAL_OWNER: Info1691
-          CANONICAL_REPO: Law-Texts-ui
-          CANONICAL_BRANCH: main
-          SITE_BASE: https://texts.wwwbcb.org
-        run: |
-          node scripts/relocate.mjs
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_OWNER: "Info1691"
+          TARGET_REPO: "Law-Texts-ui"
+          TARGET_BRANCH: "main"
+          PLAN: ${{ inputs.plan }}
+        run: npm run relocate
