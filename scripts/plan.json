@@ -1,0 +1,56 @@
+[
+  {
+    "fromRepo": "laws-ui",
+    "fromBranch": "main",
+    "fromPath": "data/laws/jersey/JTL-1984.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/laws/jersey/JTL-1984.txt",
+    "message": "Relocate: Trusts (Jersey) Law 1984 to canonical location"
+  },
+  {
+    "fromRepo": "laws-ui",
+    "fromBranch": "main",
+    "fromPath": "data/laws/jersey/Companies (Jersey) Law 1991.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/laws/jersey/Companies (Jersey) Law 1991.txt",
+    "message": "Relocate: Companies (Jersey) Law 1991"
+  },
+  {
+    "fromRepo": "laws-ui",
+    "fromBranch": "main",
+    "fromPath": "data/laws/jersey/Financial Services (Jersey) Law 1998.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/laws/jersey/Financial Services (Jersey) Law 1998.txt",
+    "message": "Relocate: Financial Services (Jersey) Law 1998"
+  },
+  {
+    "fromRepo": "rules-ui",
+    "fromBranch": "main",
+    "fromPath": "data/rules/jersey/JFSC-Code-Of-Practise.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/rules/jersey/JFSC-Code-Of-Practise.txt",
+    "message": "Relocate: JFSC Code of Practice for Trustees"
+  },
+  {
+    "fromRepo": "rules-ui",
+    "fromBranch": "main",
+    "fromPath": "data/rules/uk/sra-code.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/rules/uk/sra-code.txt",
+    "message": "Relocate: SRA Code of Conduct 2019"
+  },
+  {
+    "fromRepo": "rules-ui",
+    "fromBranch": "main",
+    "fromPath": "data/rules/uk/icaew-code.txt",
+    "toRepo": "Law-Texts-ui",
+    "toBranch": "main",
+    "toPath": "data/rules/uk/icaew-code.txt",
+    "message": "Relocate: ICAEW Code of Ethics"
+  }
+]
