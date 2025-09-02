@@ -2,56 +2,76 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>.txt Locator — textbooks + laws + rules across repos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root{--bg:#0b2239;--ink:#0b2239;--muted:#5b6b7b;--card:#fff;--line:#eef2f6;--shadow:0 1px 3px rgba(0,0,0,.08);--blue:#0d6efd;--green:#267a4a;--red:#b42318;--gold:#7a5a00;--vio:#4527a0;--teal:#046c7a}
-  body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#f6f8fb;color:var(--ink)}
-  header{background:var(--bg);color:#fff;padding:14px 16px}
-  header a{color:#fff;text-decoration:none;opacity:.85}
-  main{max-width:1200px;margin:18px auto;padding:0 12px}
-  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
-  input[type="text"]{padding:8px 10px;border:1px solid #d0d7de;border-radius:8px;min-width:280px;background:#fff}
-  label{color:var(--muted)}
-  button{font:inherit;background:var(--blue);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
-  button.ghost{background:#e9eef6;color:#0b2239}
+  :root { --bg:#0f172a; --card:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; }
+  html,body{margin:0;background:#0b1220;color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:#0d1529;border-bottom:1px solid #1f2937;position:sticky;top:0;z-index:5}
+  h1{font-size:16px;margin:0 8px 0 0;font-weight:700}
+  .pill{background:#1f2937;border:1px solid #374151;border-radius:999px;padding:6px 10px;display:inline-flex;gap:8px;align-items:center}
+  input[type="text"]{background:#0a1020;border:1px solid #334155;color:var(--ink);border-radius:8px;padding:8px 10px;min-width:260px}
+  button{background:#1e40af;border:1px solid #1d4ed8;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  main{max-width:1100px;margin:18px auto;padding:0 16px}
+  .help{color:var(--muted);margin:8px 0 16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label{display:inline-flex;gap:8px;align-items:center}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{padding:10px 8px;border-bottom:1px solid #1f2937;vertical-align:top}
+  th{color:#cbd5e1;text-align:left;background:#0d1426;position:sticky;top:52px;z-index:2}
+  .kind{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid #374151;background:#0d1426;color:#d1d5db}
+  .kind[data-k="Textbook"]{border-color:#2563eb;color:#bfdbfe}
+  .kind[data-k="Law"]{border-color:#22c55e;color:#bbf7d0}
+  .kind[data-k="Rule"]{border-color:#eab308;color:#fde68a}
   .muted{color:var(--muted)}
-  table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
-  th,td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:#f3f6fb;text-align:left;font-weight:600}
-  tr:hover td{background:#fafcff}
-  code{background:#f3f6fb;padding:2px 6px;border-radius:6px}
-  .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-size:12px;margin-right:6px;background:#eef6ff;color:#0d6efd}
-  .kind{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px;margin-right:6px}
-  .k-textbook{background:#e9f5ee;color:var(--green)}
-  .k-law{background:#fff3d4;color:var(--gold)}
-  .k-rule{background:#f0e9ff;color:var(--vio)}
-  .k-ingester{background:#e8fbff;color:var(--teal)}
-  .k-source{background:#fde8e8;color:var(--red)}
-  .danger{background:#fde8e8;color:var(--red);padding:2px 6px;border-radius:6px}
-  .small{font-size:12px}
+  .ok{color:var(--ok)}
+  .bad{color:var(--bad)}
+  .warn{color:var(--warn)}
+  .tiny{font-size:12px}
+  details{margin:10px 0}
+  .badge{font-size:12px;border:1px solid #374151;border-radius:6px;padding:2px 6px;color:#cbd5e1}
+  .right{margin-left:auto}
+  .token{min-width:340px}
+  .note{margin-top:10px;color:#93c5fd}
 </style>
 </head>
 <body>
 <header>
-  <div style="display:flex;justify-content:space-between;align-items:center;">
-    <div><strong>.txt Locator</strong> — textbooks + laws + rules across repos</div>
-    <div><a href="./index.html">← Back to tools</a></div>
-  </div>
+  <h1>.txt Locator</h1>
+  <span class="badge">textbooks + laws + rules across repos</span>
+  <span class="right"></span>
+  <label class="pill"><input id="showMoves" type="checkbox"> show move commands</label>
+  <details class="pill"><summary>auth (optional)</summary>
+    <div class="row" style="margin-top:8px">
+      <input id="token" class="token" type="text" placeholder="Paste a GitHub token (public_repo or read-only) — stored only in this browser">
+      <button id="saveTok">Save</button>
+      <button id="clearTok" style="background:#374151;border-color:#475569">Clear</button>
+    </div>
+    <div class="tiny muted">Using a token avoids GitHub’s anonymous 60-requests/hour limit. Nothing is sent anywhere except to GitHub from your browser; we store it in localStorage on this device only.</div>
+  </details>
 </header>
 
 <main>
-  <div class="controls">
-    <input id="filter" type="text" placeholder="Filter (e.g., lewin, birks, jersey, JTL-1984)…">
-    <label><input type="checkbox" id="showCmds"> show move commands</label>
-    <button id="scanBtn">Scan now</button>
-    <span class="muted" id="status"></span>
+  <div class="row">
+    <input id="q" type="text" placeholder="Filter (e.g., lewin, birks, jersey, JTL-1984)…">
+    <button id="scan">Scan now</button>
+    <span id="status" class="help"></span>
   </div>
 
-  <table id="results">
+  <div class="help tiny">
+    Canonical destinations:
+    <ul>
+      <li>Textbooks → <code>Law-Texts-ui/data/textbooks/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code></li>
+      <li>Laws → <code>Law-Texts-ui/data/laws/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code></li>
+      <li>Rules → <code>Law-Texts-ui/data/rules/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code></li>
+    </ul>
+  </div>
+
+  <table id="tbl" style="display:none">
     <thead>
       <tr>
-        <th>File</th>
+        <th style="width:32%">File</th>
         <th>Kind</th>
         <th>Repo / Path</th>
         <th>Jurisdiction</th>
@@ -63,185 +83,202 @@
     <tbody></tbody>
   </table>
 
-  <p class="muted small" style="margin-top:12px">
-    Canonical destinations:<br>
-    • Textbooks → <code>Law-Texts-ui/data/textbooks/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code><br>
-    • Laws → <code>Law-Texts-ui/data/laws/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code><br>
-    • Rules → <code>Law-Texts-ui/data/rules/&lt;jersey|uk&gt;/&lt;filename&gt;.txt</code>
-  </p>
+  <div id="msg" class="note" style="display:none"></div>
 </main>
 
 <script>
-const OWNER = 'Info1691';
-const apiRoot = 'https://api.github.com';
+(function(){
+  const user = "Info1691"; // org/user owner
+  // Repos & paths we actually care about (no repo enumeration -> fewer API calls, no hang).
+  const SCAN_TARGETS = [
+    {repo:"Law-Texts-ui", paths:["data/textbooks/jersey","data/textbooks/uk","data/laws/jersey","data/rules/jersey","data/rules/uk"]},
+    {repo:"laws-ui",      paths:["data/laws/jersey","data/laws/uk"]},
+    {repo:"rules-ui",     paths:["data/rules/jersey","data/rules/uk"]},
+    {repo:"lex-ingest-local", paths:["law-index/texts/jersey","law-index/texts/uk","law-index/texts"]},
+    {repo:"law-index",    paths:["data/texts/jersey","data/texts/uk","data/texts"]},
+  ];
 
-// Base locations we’ll probe in every repo (one level deep)
-const BASES = [
-  {base:'data/textbooks', kind:'textbook'},
-  {base:'data/laws',      kind:'law'},
-  {base:'data/rules',     kind:'rule'},
-  {base:'law-index/texts',kind:'ingester'},
-  {base:'source',         kind:'source'} // PDFs / leftovers
-];
+  const el = sel => document.querySelector(sel);
+  const status = el("#status");
+  const tbl = el("#tbl");
+  const tbody = tbl.querySelector("tbody");
+  const msg = el("#msg");
+  const q = el("#q");
+  const showMoves = el("#showMoves");
 
-async function ghJSON(url){
-  const r = await fetch(url,{headers:{'Accept':'application/vnd.github+json'}});
-  if(!r.ok) throw new Error(`${r.status} ${r.statusText} – ${url}`);
-  return r.json();
-}
+  const tokInput = el("#token");
+  const saveTok = el("#saveTok");
+  const clearTok = el("#clearTok");
+  const saved = localStorage.getItem("law_tools_token");
+  if (saved) tokInput.value = saved;
 
-async function listRepos(){
-  // cache repo list for this session to be gentle on rate limits
-  const cacheKey = 'lt-repos';
-  const cached = sessionStorage.getItem(cacheKey);
-  if(cached){ try{ return JSON.parse(cached); }catch{} }
-  const arr = await ghJSON(`${apiRoot}/users/${OWNER}/repos?per_page=100&type=owner&sort=updated`);
-  const names = arr.map(r => r.name);
-  sessionStorage.setItem(cacheKey, JSON.stringify(names));
-  return names;
-}
-
-function prettySize(bytes){
-  if(bytes == null) return '';
-  const u=['B','KB','MB','GB']; let i=0,n=bytes;
-  while(n>=1024&&i<u.length-1){n/=1024;i++}
-  return `${n.toFixed(n>=10||i===0?0:1)} ${u[i]}`;
-}
-
-function ghLinks(repo, path){
-  const enc = path.split('/').map(encodeURIComponent).join('/');
-  return {
-    web:`https://github.com/${OWNER}/${repo}/blob/main/${enc}`,
-    raw:`https://raw.githubusercontent.com/${OWNER}/${repo}/main/${enc}`
+  saveTok.onclick = () => {
+    localStorage.setItem("law_tools_token", tokInput.value.trim());
+    toast("Token saved locally.");
   };
-}
+  clearTok.onclick = () => {
+    localStorage.removeItem("law_tools_token");
+    tokInput.value = "";
+    toast("Token cleared.");
+  };
 
-function detectJur(path){
-  const m = path.match(/\/(jersey|uk)(\/|$)/i);
-  return m ? m[1].toLowerCase() : '';
-}
+  function toast(t){ status.textContent = t; setTimeout(()=>status.textContent="",3000); }
 
-function kindBadge(kind){
-  const map={textbook:'k-textbook',law:'k-law',rule:'k-rule',ingester:'k-ingester',source:'k-source'};
-  const cls = map[kind]||'danger';
-  const label = kind.charAt(0).toUpperCase()+kind.slice(1);
-  return `<span class="kind ${cls}">${label}</span>`;
-}
-
-function canonical(kind,name,jur){
-  if(!jur) jur='';
-  if(kind==='textbook') return `Law-Texts-ui/data/textbooks/${jur}/${name}`;
-  if(kind==='law')      return `Law-Texts-ui/data/laws/${jur}/${name}`;
-  if(kind==='rule')     return `Law-Texts-ui/data/rules/${jur}/${name}`;
-  // default for ingester/source (textbooks unless you change policy later)
-  return `Law-Texts-ui/data/textbooks/${jur}/${name}`;
-}
-
-async function listTxtIn(repo, base){
-  // try base; if present, list. Then list one level deeper dirs.
-  const out=[];
-  async function ls(path){
-    try{
-      const url = `${apiRoot}/repos/${OWNER}/${repo}/contents/${encodeURIComponent(path)}?ref=main&per_page=100`;
-      const items = await ghJSON(url);
-      if(!Array.isArray(items)) return [];
-      return items;
-    }catch{ return []; }
+  function toCanonical(kind, repo, path){
+    // filename last segment
+    const parts = path.split("/");
+    const file = parts[parts.length-1];
+    // try to guess jurisdiction from path
+    const lower = path.toLowerCase();
+    const j = lower.includes("/jersey/") ? "jersey" : lower.includes("/uk/") ? "uk" : "jersey";
+    if (kind==="Textbook") return `Law-Texts-ui/data/textbooks/${j}/${file}`;
+    if (kind==="Law") return `Law-Texts-ui/data/laws/${j}/${file}`;
+    if (kind==="Rule") return `Law-Texts-ui/data/rules/${j}/${file}`;
+    return `Law-Texts-ui/data/${j}/${file}`;
   }
-  const top = await ls(base);
-  for(const it of top){
-    if(it.type==='file' && /\.txt$/i.test(it.name)){
-      out.push({name:it.name,size:it.size,path:`${base}/${it.name}`});
-    }else if(it.type==='dir'){
-      const sub = await ls(`${base}/${it.name}`);
-      for(const f of sub){
-        if(f.type==='file' && /\.txt$/i.test(f.name)){
-          out.push({name:f.name,size:f.size,path:`${base}/${it.name}/${f.name}`});
+
+  function kindFromPath(path, repo){
+    const p = path.toLowerCase();
+    if (p.includes("/textbook") || p.includes("underhill") || p.includes("lewin") || p.includes("principles-of-jersey-trusts") || p.includes("breach-of-trust") || p.includes("litigating-trust")) return "Textbook";
+    if (p.includes("/rules/") || repo==="rules-ui") return "Rule";
+    if (p.includes("/laws/") || repo==="laws-ui") return "Law";
+    // lex-ingest-local / law-index buckets:
+    if (p.includes("/law-index/texts/") || p.includes("/data/texts/")) return "Textbook";
+    return "Textbook";
+  }
+
+  function jurFromPath(path){
+    const p = path.toLowerCase();
+    if (p.includes("/jersey/")) return "jersey";
+    if (p.includes("/uk/")) return "uk";
+    return "";
+  }
+
+  async function gh(path){
+    const headers = { "Accept":"application/vnd.github+json" };
+    const t = (tokInput.value || "").trim();
+    if (t) headers.Authorization = `Bearer ${t}`;
+    const r = await fetch(`https://api.github.com${path}`, { headers });
+    if (!r.ok){
+      // produce helpful errors
+      let detail = "";
+      try { const j = await r.json(); detail = j.message || ""; } catch {}
+      const err = new Error(`GitHub API ${r.status}: ${detail || r.statusText}`);
+      err.status = r.status; err.detail = detail;
+      throw err;
+    }
+    return r.json();
+  }
+
+  async function listDir(repo, path){
+    // returns array of {repo, path, size, url, html_url}
+    try{
+      const items = await gh(`/repos/${user}/${repo}/contents/${encodeURIComponent(path)}`);
+      if (!Array.isArray(items)) return [];
+      const out = [];
+      for (const it of items){
+        if (it.type==="file" && it.name.toLowerCase().endsWith(".txt")){
+          out.push({repo, path:`${path}/${it.name}`, size:it.size, html:it.html_url, raw:it.download_url});
+        } else if (it.type==="dir"){
+          // shallow recursion (one level) to keep calls low
+          try{
+            const sub = await gh(`/repos/${user}/${repo}/contents/${encodeURIComponent(path+"/"+it.name)}`);
+            for (const s of sub){
+              if (s.type==="file" && s.name.toLowerCase().endsWith(".txt")){
+                out.push({repo, path:`${path}/${it.name}/${s.name}`, size:s.size, html:s.html_url, raw:s.download_url});
+              }
+            }
+          }catch(e){ /* ignore missing subdir */ }
         }
       }
-    }
-  }
-  return out;
-}
-
-async function scan(){
-  const status = document.getElementById('status');
-  status.textContent = 'Enumerating repos…';
-  const repos = await listRepos();
-
-  const all=[];
-  let checked = 0;
-  for(const repo of repos){
-    for(const b of BASES){
-      status.textContent = `Scanning ${repo}/${b.base} …`;
-      const files = await listTxtIn(repo,b.base);
-      for(const f of files){
-        const jur = detectJur(f.path);
-        const dest = canonical(b.kind,f.name,jur);
-        const lnks = ghLinks(repo,f.path);
-        all.push({file:f.name,kind:b.kind,repo,path:f.path,jur,size:f.size,web:lnks.web,raw:lnks.raw,dest});
+      return out;
+    }catch(e){
+      // handle rate limit nicely
+      if (e.status===403 && (e.detail||"").toLowerCase().includes("rate limit")){
+        throw new Error("GitHub API rate limit hit. Paste a token (top right) or wait a bit, then Scan again.");
       }
+      // 404 paths are fine (not every repo has all paths)
+      if (e.status===404) return [];
+      throw e;
     }
-    checked++;
   }
-  render(all);
-  status.textContent = `Found ${all.length} .txt file(s) across ${repos.length} repos`;
-}
 
-function render(rows){
-  const filter = (document.getElementById('filter').value||'').toLowerCase().trim();
-  const showCmds = document.getElementById('showCmds').checked;
-  const tbody = document.querySelector('#results tbody');
-  tbody.innerHTML = '';
-  // stable order: Laws, Rules, Textbooks, then others; within that by name
-  const kindOrder = {law:0,rule:1,textbook:2,ingester:3,source:4};
-  rows.sort((a,b)=> (kindOrder[a.kind]-kindOrder[b.kind]) || a.file.localeCompare(b.file));
-  for(const r of rows){
-    const hay = `${r.file} ${r.repo} ${r.path} ${r.jur} ${r.kind}`.toLowerCase();
-    if(filter && !hay.includes(filter)) continue;
-
-    const tr = document.createElement('tr');
-
-    const tdFile = document.createElement('td');
-    tdFile.innerHTML = `<span class="badge">.txt</span> <strong>${r.file}</strong>`;
-    tr.appendChild(tdFile);
-
-    const tdKind = document.createElement('td');
-    tdKind.innerHTML = kindBadge(r.kind);
-    tr.appendChild(tdKind);
-
-    const tdRepo = document.createElement('td');
-    tdRepo.innerHTML = `<code>${r.repo}</code><div class="muted">${r.path}</div>`;
-    tr.appendChild(tdRepo);
-
-    const tdJur = document.createElement('td');
-    tdJur.innerHTML = r.jur ? `<code>${r.jur}</code>` : '<span class="danger">unknown</span>';
-    tr.appendChild(tdJur);
-
-    const tdSize = document.createElement('td');
-    tdSize.textContent = prettySize(r.size);
-    tr.appendChild(tdSize);
-
-    const tdOpen = document.createElement('td');
-    const cmd = `git mv ${r.repo}/${r.path} ${r.dest}`;
-    tdOpen.innerHTML =
-      `<a href="${r.web}" target="_blank">GitHub</a> · `+
-      `<a href="${r.raw}" target="_blank">RAW</a>`+
-      (showCmds ? ` · <a href="#" onclick="navigator.clipboard.writeText(${JSON.stringify(cmd)});return false;">copy move cmd</a>` : '');
-    tr.appendChild(tdOpen);
-
-    const tdDest = document.createElement('td');
-    tdDest.innerHTML = `<code>${r.dest}</code>`;
-    tr.appendChild(tdDest);
-
-    tbody.appendChild(tr);
+  function render(rows){
+    const filter = q.value.trim().toLowerCase();
+    tbody.innerHTML = "";
+    let shown = 0;
+    for (const r of rows){
+      const text = `${r.name} ${r.repo} ${r.path} ${r.kind} ${r.jur}`.toLowerCase();
+      if (filter && !text.includes(filter)) continue;
+      const tr = document.createElement("tr");
+      const openLinks = `<a href="${r.html}" target="_blank">GitHub</a> · <a href="${r.raw}" target="_blank">RAW</a>`;
+      const move = `mv ${r.repo}/${r.path} Law-Texts-ui/${toCanonical(r.kind, r.repo, r.path)}`;
+      tr.innerHTML = `
+        <td><code>.txt</code> ${r.name}</td>
+        <td><span class="kind" data-k="${r.kind}">${r.kind}</span></td>
+        <td><div>${r.repo}<br><span class="muted tiny">${r.path}</span></div></td>
+        <td>${r.jur || ""}</td>
+        <td>${r.size ? (r.size<1024? r.size+" B": (r.size/1024).toFixed(0)+" KB") : ""}</td>
+        <td class="tiny">${openLinks}</td>
+        <td class="tiny"><code>${toCanonical(r.kind, r.repo, r.path)}</code>${showMoves.checked? `<div class="muted tiny">move: <code>${move}</code></div>`:""}</td>`;
+      tbody.appendChild(tr);
+      shown++;
+    }
+    tbl.style.display = shown? "table" : "none";
+    msg.style.display = shown? "none":"block";
+    msg.textContent = shown? "" : "No .txt files matched this filter.";
+    status.textContent = `Found ${shown} file(s).`;
   }
-}
 
-document.getElementById('scanBtn').addEventListener('click', scan);
-document.getElementById('filter').addEventListener('input', ()=>scan());
-document.getElementById('showCmds').addEventListener('change', ()=>scan());
-window.addEventListener('load', scan);
+  async function scan(){
+    status.textContent = "Scanning known repos…";
+    msg.style.display = "none";
+    tbl.style.display = "none";
+    tbody.innerHTML = "";
+    el("#scan").disabled = true;
+
+    const rows = [];
+    try{
+      for (const target of SCAN_TARGETS){
+        for (const p of target.paths){
+          const list = await listDir(target.repo, p);
+          for (const it of list){
+            const name = it.path.split("/").pop();
+            rows.push({
+              name, repo: target.repo, path: it.path, size: it.size,
+              html: it.html, raw: it.raw,
+              kind: kindFromPath(it.path, target.repo),
+              jur: jurFromPath(it.path)
+            });
+          }
+        }
+      }
+      rows.sort((a,b)=> a.name.localeCompare(b.name));
+      render(rows);
+    }catch(e){
+      msg.style.display = "block";
+      msg.innerHTML = `<span class="bad">Error:</span> ${e.message}`;
+      status.textContent = "";
+    }finally{
+      el("#scan").disabled = false;
+    }
+  }
+
+  el("#scan").addEventListener("click", scan);
+  q.addEventListener("input", ()=> {
+    // live filter without re-scan
+    const trs = Array.from(tbody.querySelectorAll("tr"));
+    const filter = q.value.trim().toLowerCase();
+    let count = 0;
+    for (const tr of trs){
+      const text = tr.innerText.toLowerCase();
+      const keep = !filter || text.includes(filter);
+      tr.style.display = keep? "": "none";
+      if (keep) count++;
+    }
+    status.textContent = count? `Filtered to ${count} file(s).` : "";
+  });
+})();
 </script>
 </body>
 </html>
