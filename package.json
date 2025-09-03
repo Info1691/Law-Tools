@@ -2,12 +2,9 @@
   "name": "law-tools",
   "private": true,
   "type": "module",
-  "version": "0.1.0",
-  "license": "MIT",
-  "scripts": {
-    "relocate": "node scripts/relocate.mjs"
-  },
+  "version": "1.0.0",
+  "description": "Automation helpers for Law-Texts",
   "dependencies": {
-    "@octokit/rest": "^20.1.0"
+    "@octokit/rest": "^20.1.1"
   }
 }
