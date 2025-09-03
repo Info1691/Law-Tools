@@ -3,98 +3,187 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Catalog link checker</title>
+  <title>Law Index — Link Checker</title>
   <style>
-    :root{--bg:#0d2238;--paper:#fff;--muted:#708198;--ok:#1f9d55;--bad:#d64545}
-    body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;background:#f4f6fb}
-    header{background:var(--bg);color:#fff;padding:16px}
-    header h1{margin:0;font-size:20px}
-    main{max-width:1100px;margin:18px auto;padding:0 14px}
-    table{width:100%;border-collapse:collapse;background:var(--paper)}
-    th,td{padding:10px;border-bottom:1px solid #e6ebf2;vertical-align:top}
-    th{background:#f1f5fb;text-align:left}
-    code, a{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-    .ok{color:var(--ok);font-weight:600}
-    .bad{color:var(--bad);font-weight:600}
-    .source{white-space:nowrap}
-    .muted{color:var(--muted)}
+    :root{
+      --bg:#0e1420; --panel:#141b2a; --muted:#7b8aa5; --text:#e6edf3; --ok:#2ecc71; --warn:#f1c40f; --err:#ff6b6b; --link:#7aa2ff; --chip:#22304a;
+      --row:#101726; --rowAlt:#0c1220; --bd:#1f2b44; --pill:#243350;
+    }
+    html,body{background:var(--bg);color:var(--text);font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, "Apple Color Emoji","Segoe UI Emoji";margin:0}
+    header{display:flex;gap:12px;align-items:center;padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--bd)}
+    header h1{font-size:18px; margin:0; letter-spacing:.2px}
+    main{max-width:1100px;margin:24px auto;padding:0 16px}
+    .desc{color:var(--muted);font-size:14px;margin-bottom:12px}
+    .controls{display:grid;gap:8px;margin-bottom:14px}
+    .controls label{font-size:12px;color:var(--muted)}
+    .controls input{width:100%;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:#0b1220;color:var(--text)}
+    .btn{appearance:none;border:1px solid var(--bd);background:var(--pill);color:var(--text);padding:8px 12px;border-radius:8px;cursor:pointer}
+    .btn:hover{filter:brightness(1.1)}
+    .runbar{display:flex;gap:8px;align-items:center;margin:8px 0 18px}
+    .status{font-size:13px;color:var(--muted)}
+    table{width:100%;border-collapse:collapse;overflow:hidden;border-radius:10px;border:1px solid var(--bd)}
+    thead{background:#0b1220}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--bd);vertical-align:top;font-size:14px}
+    tbody tr:nth-child(odd){background:var(--row)}
+    tbody tr:nth-child(even){background:var(--rowAlt)}
+    code{background:var(--chip);padding:2px 6px;border-radius:6px}
+    a{color:var(--link);text-decoration:none}
+    .pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted)}
+    .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+    .src{color:var(--muted);font-weight:600}
   </style>
 </head>
 <body>
   <header>
-    <h1>Catalog link checker</h1>
-    <div class="muted">Checks every <code>url_txt</code> in <code>/texts/catalog.json</code>, <code>/laws.json</code>, and <code>/rules.json</code> on <strong>texts.wwwbcb.org</strong>.</div>
+    <h1>Law Index — Link Checker</h1>
   </header>
   <main>
-    <table id="results">
+    <p class="desc">
+      Checks every <code>url_txt</code> in the catalogs and issues a small ranged request (1KB) to avoid full downloads.
+      Catalogs default to <code>texts.wwwbcb.org</code>. You can override them below.
+    </p>
+
+    <div class="controls">
+      <div>
+        <label>Textbooks catalog</label>
+        <input id="inpTextbooks" value="https://texts.wwwbcb.org/texts/catalog.json">
+      </div>
+      <div>
+        <label>Laws catalog</label>
+        <input id="inpLaws" value="https://texts.wwwbcb.org/laws.json">
+      </div>
+      <div>
+        <label>Rules catalog</label>
+        <input id="inpRules" value="https://texts.wwwbcb.org/rules.json">
+      </div>
+    </div>
+
+    <div class="runbar">
+      <button id="btnRun" class="btn">Run checks</button>
+      <span id="runStatus" class="status">Idle.</span>
+    </div>
+
+    <table id="tbl">
       <thead>
         <tr>
-          <th>Source</th>
+          <th style="width:110px">Source</th>
           <th>Title</th>
           <th>URL</th>
-          <th>Status</th>
+          <th style="width:70px">HTTP</th>
+          <th style="width:80px">Time</th>
+          <th style="width:80px">Size</th>
+          <th style="width:120px">Status</th>
         </tr>
       </thead>
-      <tbody></tbody>
+      <tbody id="tbody"></tbody>
     </table>
   </main>
 
-<script>
-(async () => {
-  const catalogs = [
-    { source: 'Textbooks', url: 'https://texts.wwwbcb.org/texts/catalog.json' },
-    { source: 'Laws',      url: 'https://texts.wwwbcb.org/laws.json' },
-    { source: 'Rules',     url: 'https://texts.wwwbcb.org/rules.json' },
-  ];
+  <script>
+    const tbody = document.getElementById('tbody');
+    const btnRun = document.getElementById('btnRun');
+    const runStatus = document.getElementById('runStatus');
 
-  const tbody = document.querySelector('#results tbody');
+    btnRun.addEventListener('click', run);
 
-  const check = async (href) => {
-    try {
-      // Small ranged GET avoids downloading entire TXT
-      const res = await fetch(href, { headers: { 'Range': 'bytes=0-0' } });
-      if (res.ok) return { ok: true, status: res.status };
-      return { ok: false, status: res.status };
-    } catch (e) {
-      return { ok: false, status: e.message };
+    async function run(){
+      tbody.innerHTML = '';
+      const urls = {
+        textbooks: document.getElementById('inpTextbooks').value.trim(),
+        laws:      document.getElementById('inpLaws').value.trim(),
+        rules:     document.getElementById('inpRules').value.trim()
+      };
+
+      let items = [];
+      runStatus.textContent = 'Loading catalogs…';
+
+      for (const [kind, catUrl] of Object.entries(urls)){
+        try{
+          const res = await fetch(catUrl, {cache:'no-cache'});
+          if(!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+          const arr = await res.json();
+          if(!Array.isArray(arr)) throw new Error('Catalog is not an array');
+          for (const it of arr){
+            const title = it.title || it.name || '(untitled)';
+            const u = it.url_txt || it.url || it.href;
+            if(!u) continue;
+            const absolute = new URL(u, catUrl).href;    // <-- resolve RELATIVE to catalog
+            items.push({kind, title, absolute});
+          }
+        }catch(err){
+          addRow(kindLabel(kind), `(catalog error: ${err.message})`, '', '', '', '', 'error');
+        }
+      }
+
+      runStatus.textContent = `Checking ${items.length} links…`;
+
+      let ok=0, err=0;
+      for (const it of items){
+        const t0 = performance.now();
+        let http = '—', size='—', cls='error', label='Not found';
+
+        try{
+          // Try ranged GET first (lightweight)
+          let res = await fetch(it.absolute, {
+            method:'GET',
+            headers:{ 'Range':'bytes=0-1023' },
+            cache:'no-cache'
+          });
+
+          // If server rejects Range (416/206 logic), fall back to normal GET
+          if(res.status === 416 || res.status === 405){
+            res = await fetch(it.absolute, {method:'GET', cache:'no-cache'});
+          }
+
+          const t1 = performance.now();
+          http = res.status;
+          const len = res.headers.get('content-length');
+          size = len ? humanSize(len) : '—';
+
+          if (res.ok || res.status === 206){
+            cls = 'ok'; label = 'OK'; ok++;
+          } else {
+            cls = 'error'; label = 'Not found'; err++;
+          }
+
+          addRow(kindLabel(it.kind), it.title, it.absolute, http, `${Math.round(t1 - t0)} ms`, size, label, cls);
+        }catch(e){
+          const t1 = performance.now();
+          addRow(kindLabel(it.kind), it.title, it.absolute, '—', `${Math.round(t1 - t0)} ms`, '—', 'Error', 'error');
+          err++;
+        }
+      }
+
+      runStatus.textContent = `Done — OK: ${ok} · Errors: ${err}.`;
     }
-  };
 
-  const addRow = (source, title, url, ok, status) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="source">${source}</td>
-      <td>${title || '<span class="muted">(untitled)</span>'}</td>
-      <td><a href="${url}" target="_blank" rel="noopener">${url}</a></td>
-      <td class="${ok ? 'ok' : 'bad'}">${ok ? 'OK' : 'Not found'} <span class="muted">(${status})</span></td>
-    `;
-    tbody.appendChild(tr);
-  };
-
-  for (const cat of catalogs) {
-    let items = [];
-    try {
-      const r = await fetch(cat.url);
-      const json = await r.json();
-      // Both formats supported: {items:[...]} or [...]
-      items = Array.isArray(json) ? json : (json.items || []);
-    } catch (e) {
-      addRow(cat.source, '[Catalog load failed]', cat.url, false, e.message);
-      continue;
+    function addRow(src, title, url, http, time, size, label, cls=''){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="src">${src}</td>
+        <td>${escapeHtml(title)}</td>
+        <td><a href="${url}" target="_blank" rel="noopener">${url}</a></td>
+        <td>${http}</td>
+        <td>${time}</td>
+        <td>${size}</td>
+        <td class="${cls === 'ok' ? 'ok' : (cls==='error' ? 'err' : '')}">${label}</td>
+      `;
+      tbody.appendChild(tr);
     }
 
-    for (const it of items) {
-      const title = it.title || it.name || '';
-      const url = it.url_txt || it.url || '';
-      if (!url) { addRow(cat.source, title, '(missing url_txt)', false, 'no url_txt'); continue; }
-
-      // Support relative paths in catalog (./data/...)
-      const absolute = url.startsWith('http') ? url : new URL(url, cat.url).href;
-      const { ok, status } = await check(absolute);
-      addRow(cat.source, title, absolute, ok, status);
+    function kindLabel(k){
+      if(k === 'textbooks') return 'Textbooks';
+      if(k === 'laws') return 'Laws';
+      if(k === 'rules') return 'Rules';
+      return k || '';
     }
-  }
-})();
-</script>
+    function humanSize(n){
+      const b = Number(n)||0;
+      if (b >= 1024*1024) return (b/1024/1024).toFixed(1)+' MB';
+      if (b >= 1024) return (b/1024).toFixed(0)+' KB';
+      return b+' B';
+    }
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  </script>
 </body>
 </html>
