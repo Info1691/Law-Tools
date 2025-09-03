@@ -4,20 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       plan:
-        description: 'JSON array of move instructions'
+        description: "Optional JSON array of moves; if empty, auto-scan and relocate"
         required: false
-        default: ''
-      plan_path:
-        description: 'Optional path to a JSON plan file in repo (e.g., scripts/plan.json)'
+        default: ""
+      repos:
+        description: "Comma-separated owner/repo to scan (defaults cover your setup)"
         required: false
-        default: ''
-
-permissions:
-  contents: write
+        default: "Info1691/Law-Texts-ui,Info1691/laws-ui,Info1691/rules-ui,Info1691/lex-ingest-local"
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
@@ -25,14 +24,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install deps
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Run relocator
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          PLAN: ${{ github.event.inputs.plan }}
-          PLAN_PATH: ${{ github.event.inputs.plan_path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PLAN: ${{ github.event.inputs.plan }}
+          INPUT_REPOS: ${{ github.event.inputs.repos }}
         run: node scripts/relocate.mjs
