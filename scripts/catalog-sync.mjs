@@ -1,12 +1,9 @@
 /**
- * Catalog Sync — rewrites url_txt entries so they point to the actual live TXT files.
- * - Scans these repos: Law-Texts-ui, laws-ui, rules-ui (branch main)
- * - Builds a map of filename -> public URL (preferring Law-Texts-ui)
- * - Loads catalogs in Law-Texts-ui (texts/catalog.json, laws.json, rules.json)
- * - Rewrites url_txt when a better (non-404) location exists
- * - Commits the updated catalog files back to Law-Texts-ui
- *
- * No external deps: uses Node 20 fetch + GitHub REST API.
+ * Catalog Sync — rewrites url_txt entries so they point to live TXT files.
+ * Scans: Law-Texts-ui, laws-ui, rules-ui (branch main)
+ * Updates catalogs in Law-Texts-ui: texts/catalog.json, laws.json, rules.json
+ * Prefers Law-Texts-ui, then laws-ui, then rules-ui.
+ * Handles URL-encoded names (spaces, parentheses) when matching.
  */
 
 const {
@@ -56,214 +53,154 @@ const canonicalPrefixes = {
   "rules-ui": ["data/rules"],
 };
 
-const preferOrder = ["Law-Texts-ui", "laws-ui", "rules-ui"]; // choose this order if duplicates exist
+const preferOrder = ["Law-Texts-ui", "laws-ui", "rules-ui"];
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function ghGet(url){ const r=await fetch(url,{headers}); if(!r.ok){throw new Error(`GET ${url} -> ${r.status} ${await r.text()}`);} return r.json(); }
+async function ghPut(url,body){ const r=await fetch(url,{method:"PUT",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify(body)}); if(!r.ok){throw new Error(`PUT ${url} -> ${r.status} ${await r.text()}`);} return r.json(); }
+const b64e = s => Buffer.from(s,"utf8").toString("base64");
+const b64d = s => Buffer.from(s,"base64").toString("utf8");
+
+function lastSeg(p){ return (p||"").split("?")[0].split("#")[0].split("/").pop(); }
+function safeDecode(s){
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+function normalizeName(name){
+  // decode %XX, collapse whitespace, lowercase
+  const dec = safeDecode(name || "");
+  return dec.replace(/\s+/g," ").trim().toLowerCase();
+}
+function chooseBest(list){
+  if(!list?.length) return null;
+  return list.sort((a,b)=>preferOrder.indexOf(a.repo)-preferOrder.indexOf(b.repo))[0];
 }
 
-async function ghGet(url) {
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`GET ${url} -> ${res.status}: ${text}`);
-  }
-  return res.json();
-}
-
-async function ghPut(url, body) {
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`PUT ${url} -> ${res.status}: ${text}`);
-  }
-  return res.json();
-}
-
-function base64encode(str) {
-  return Buffer.from(str, "utf8").toString("base64");
-}
-function base64decode(str) {
-  return Buffer.from(str, "base64").toString("utf8");
-}
-
-function filenameOf(path) {
-  return path.split("/").pop();
-}
-
-function normalizeName(name) {
-  // exact filename match works best, but normalize case to be safe
-  return (name || "").trim().toLowerCase();
-}
-
-function chooseBest(list) {
-  if (!list || !list.length) return null;
-  // Prefer Law-Texts-ui first, then laws-ui, then rules-ui
-  list.sort(
-    (a, b) => preferOrder.indexOf(a.repo) - preferOrder.indexOf(b.repo)
-  );
-  return list[0];
-}
-
-async function scanRepo(repo) {
+async function scanRepo(repo){
   const ref = `heads/${branchByRepo[repo] || "main"}`;
-  const url = `https://api.github.com/repos/${OWNER}/${repo}/git/trees/${encodeURIComponent(
-    ref
-  )}?recursive=1`;
-
+  const url = `https://api.github.com/repos/${OWNER}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`;
   const tree = await ghGet(url);
   const items = Array.isArray(tree.tree) ? tree.tree : [];
   const prefixes = canonicalPrefixes[repo] || [];
-
-  const hits = [];
-  for (const it of items) {
-    if (it.type !== "blob") continue;
+  const out = [];
+  for(const it of items){
+    if(it.type!=="blob") continue;
     const p = it.path;
-    if (!p.endsWith(".txt")) continue;
-    if (!prefixes.some((pref) => p.startsWith(pref + "/"))) continue;
-
-    const publicBase = repoPublicBase[repo];
-    const publicUrl = `${publicBase}/${p}`;
-    hits.push({ repo, path: p, url: publicUrl, name: filenameOf(p) });
+    if(!p.endsWith(".txt")) continue;
+    if(!prefixes.some(pref => p.startsWith(pref + "/"))) continue;
+    out.push({ repo, path: p, url: `${repoPublicBase[repo]}/${p}`, name: lastSeg(p) });
   }
-  return hits;
+  return out;
 }
 
-async function buildInventory() {
+async function buildInventory(){
   const all = [];
-  for (const repo of repos) {
-    try {
-      const r = await scanRepo(repo);
-      all.push(...r);
-      // tiny courtesy pause to be nice to the API
-      await sleep(150);
-    } catch (e) {
-      console.error(`Scan failed for ${repo}:`, e.message);
-    }
+  for(const repo of repos){
+    try{
+      const got = await scanRepo(repo);
+      all.push(...got);
+      await sleep(120);
+    }catch(e){ console.error(`Scan failed for ${repo}:`, e.message); }
   }
-
-  // Map: normalized filename -> [{repo, path, url}]
-  const byName = new Map();
-  for (const it of all) {
+  // Map normalized filename -> variants
+  const map = new Map();
+  for(const it of all){
     const key = normalizeName(it.name);
-    if (!byName.has(key)) byName.set(key, []);
-    byName.get(key).push(it);
+    if(!map.has(key)) map.set(key, []);
+    map.get(key).push(it);
   }
-  return byName;
+  return map;
 }
 
-async function getFile(repo, path, ref = "main") {
-  const url = `https://api.github.com/repos/${OWNER}/${repo}/contents/${encodeURIComponent(
-    path
-  )}?ref=${encodeURIComponent(ref)}`;
-  const res = await fetch(url, { headers });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`GET contents ${repo}/${path} -> ${res.status}: ${t}`);
-  }
+async function getFile(repo, path, ref="main"){
+  const url = `https://api.github.com/repos/${OWNER}/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(ref)}`;
+  const res = await fetch(url,{headers});
+  if(res.status===404) return null;
+  if(!res.ok){ throw new Error(`GET contents ${repo}/${path} -> ${res.status} ${await res.text()}`); }
   return res.json();
 }
 
-function parseCatalog(jsonText) {
-  try {
-    const data = JSON.parse(jsonText);
-    // Could be an array or {items:[...]}
-    if (Array.isArray(data)) return { root: data, items: data, wrap: (x) => x };
-    if (Array.isArray(data.items))
-      return { root: data, items: data.items, wrap: (x) => ({ ...data, items: x }) };
-    // Fallback: unknown shape
-    return { root: data, items: [], wrap: () => data };
-  } catch (e) {
-    console.error("Failed to parse catalog JSON:", e.message);
-    return { root: null, items: [], wrap: () => null };
-  }
+function parseCatalog(txt){
+  try{
+    const data = JSON.parse(txt);
+    if(Array.isArray(data)) return { root:data, items:data, wrap:(x)=>x };
+    if(Array.isArray(data.items)) return { root:data, items:data.items, wrap:(x)=>({ ...data, items:x }) };
+  }catch(e){ /* fall-through */ }
+  return { root:null, items:[], wrap:()=>null };
 }
 
-function rewriteUrlTxt(items, inventory) {
-  let updates = 0;
-  for (const entry of items) {
-    if (!entry || !entry.url_txt) continue;
-    const current = entry.url_txt;
+function rewriteUrlTxt(items, inventory){
+  let changed = 0;
+  for(const entry of items){
+    if(!entry?.url_txt) continue;
 
-    // Get just the filename from the current url_txt (handles relative or absolute)
-    let fname = current.split("?")[0].split("#")[0];
-    fname = filenameOf(fname);
-    const key = normalizeName(fname);
-    const candidates = inventory.get(key);
-    if (!candidates || !candidates.length) continue;
+    const cur = entry.url_txt;
+    const seg = lastSeg(cur);
+    const key = normalizeName(seg);
+    const variants = inventory.get(key);
 
-    const best = chooseBest(candidates);
-    if (!best) continue;
+    if(!variants || variants.length===0){
+      // Extra robustness: try dropping extension to match rare mis-entries
+      const keyNoExt = normalizeName(seg.replace(/\.txt$/i,""));
+      const fallback = [...inventory.keys()].find(k => k === keyNoExt || k.replace(/\.txt$/,"") === keyNoExt);
+      if(fallback) {
+        const cand = chooseBest(inventory.get(fallback));
+        if(cand && cand.url !== cur){ entry.url_txt = cand.url; changed++; }
+      }
+      continue;
+    }
 
-    // If different, update to absolute URL for reliability across domains
-    if (current !== best.url) {
+    const best = chooseBest(variants);
+    if(best && best.url !== cur){
       entry.url_txt = best.url;
-      updates++;
+      changed++;
     }
   }
-  return updates;
+  return changed;
 }
 
-async function updateCatalogs(inventory) {
+async function updateCatalogs(inventory){
   const repo = "Law-Texts-ui";
   const branch = branchByRepo[repo] || "main";
+  let total = 0;
 
-  let totalUpdates = 0;
+  for(const path of catalogs){
+    const meta = await getFile(repo, path, branch);
+    if(!meta){ console.warn(`Catalog not found: ${repo}/${path}`); continue; }
 
-  for (const path of catalogs) {
-    const cur = await getFile(repo, path, branch);
-    if (!cur) {
-      console.warn(`Catalog not found: ${repo}/${path}`);
-      continue;
-    }
-    const original = base64decode(cur.content || "");
+    const original = b64d(meta.content || "");
     const { root, items, wrap } = parseCatalog(original);
-    if (!root) {
-      console.warn(`Skipping invalid JSON in ${path}`);
-      continue;
-    }
+    if(!root){ console.warn(`Invalid JSON in ${path}`); continue; }
 
-    const changed = rewriteUrlTxt(items, inventory);
-    totalUpdates += changed;
+    const n = rewriteUrlTxt(items, inventory);
+    total += n;
 
-    if (changed > 0) {
-      const updatedText = JSON.stringify(wrap(items), null, 2) + "\n";
+    if(n > 0){
+      const updated = JSON.stringify(wrap(items), null, 2) + "\n";
       await ghPut(
-        `https://api.github.com/repos/${OWNER}/${repo}/contents/${encodeURIComponent(
-          path
-        )}`,
+        `https://api.github.com/repos/${OWNER}/${repo}/contents/${encodeURIComponent(path)}`,
         {
-          message: `catalog-sync: update url_txt (${changed} change${
-            changed === 1 ? "" : "s"
-          })`,
-          content: base64encode(updatedText),
-          sha: cur.sha,
+          message: `catalog-sync: update url_txt (${n} change${n===1?"":"s"})`,
+          content: b64e(updated),
+          sha: meta.sha,
           branch,
         }
       );
-      console.log(`Updated ${path}: ${changed} change(s)`);
-    } else {
+      console.log(`Updated ${path}: ${n} change(s)`);
+    }else{
       console.log(`No changes in ${path}`);
     }
   }
-
-  return totalUpdates;
+  return total;
 }
 
-(async function main() {
-  try {
-    console.log("Building inventory from repos:", repos.join(", "));
+(async function main(){
+  try{
+    console.log("Building inventory…");
     const inventory = await buildInventory();
-    console.log(`Inventory built for ${inventory.size} unique filenames`);
-
-    const updates = await updateCatalogs(inventory);
-    console.log(`Done. Total catalog updates: ${updates}`);
-  } catch (e) {
+    console.log(`Inventory contains ${inventory.size} unique filenames`);
+    const n = await updateCatalogs(inventory);
+    console.log(`Done. Total updates: ${n}`);
+  }catch(e){
     console.error(e);
     process.exit(1);
   }
