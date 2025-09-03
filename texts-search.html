@@ -1,282 +1,159 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Texts Search Tool — tools.wwwbcb.org</title>
-<style>
-  :root{
-    --bg:#0f2233;        /* header */
-    --fg:#0b1520;        /* page bg */
-    --card:#ffffff;      /* result cards */
-    --ink:#0c2338;       /* text */
-    --muted:#6c7a89;     /* muted ink */
-    --accent:#1565d8;    /* buttons/links */
-    --accent-2:#19a974;  /* small badges */
-    --warn:#d0021b;      /* errors */
-    --chip:#eef4fb;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";
-  }
-  html,body{margin:0;padding:0;background:#f5f7fa;color:var(--ink);font-family:var(--sans);}
-  header{
-    background:var(--bg); color:#fff; padding:16px 20px; display:flex; align-items:center; gap:14px;
-  }
-  header .brand{font-weight:700; letter-spacing:.2px;}
-  main{max-width:1120px; margin:24px auto; padding:0 16px 64px;}
-  .panel{
-    background:#fff; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.06);
-    padding:16px; margin-bottom:18px;
-  }
-  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
-  .row input[type=text]{flex:1 1 420px; font-size:16px; padding:12px 12px; border:1px solid #cfd8e3; border-radius:8px;}
-  .row button{
-    background:var(--accent); color:#fff; border:0; border-radius:8px; padding:12px 16px; font-weight:600; cursor:pointer;
-  }
-  .row .opt{display:flex; gap:8px; align-items:center; color:var(--muted); font-size:14px}
-  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
-  .chip{
-    background:var(--chip); color:#234; padding:6px 10px; border-radius:20px; font-size:12px;
-  }
-  h2{margin:22px 0 10px 0; font-size:18px}
-  .muted{color:var(--muted)}
-  .cards{display:grid; grid-template-columns:1fr; gap:12px}
-  @media(min-width:880px){ .cards{ grid-template-columns:1fr 1fr; } }
-  .card{background:var(--card); border-radius:12px; padding:14px 14px 10px; box-shadow:0 1px 3px rgba(0,0,0,.05); border:1px solid #eef2f7;}
-  .card h3{margin:0 0 6px 0; font-size:16px}
-  .meta{display:flex; gap:8px; align-items:center; margin-bottom:8px; color:var(--muted); font-size:12px}
-  .badge{background:#ecf6f2; color:#077a53; padding:4px 8px; border-radius:999px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px}
-  .snip{font-family:var(--sans); line-height:1.4; font-size:14px; background:#fafbfd; border:1px dashed #e6ecf4; border-radius:10px; padding:10px; margin-top:6px}
-  mark{background:#fff176; padding:0 2px}
-  a.btn{display:inline-block; margin-top:8px; text-decoration:none; background:#f2f6ff; color:var(--accent); padding:8px 10px; border-radius:8px; font-weight:600}
-  .err{color:var(--warn); font-family:var(--mono); font-size:12px; white-space:pre-wrap}
-  .progress{font-size:12px; color:var(--muted); margin-top:8px}
-  .sep{height:1px; background:#eef2f7; margin:12px 0}
-  footer{color:var(--muted); text-align:center; padding:18px 0 40px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Texts Search Tool</title>
+  <link rel="icon" href="./logo.png" />
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --brand:#0ea5e9; --accent:#60a5fa; --hl:#fde047;
+    }
+    html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
+    header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:#0b1220;border-bottom:1px solid #0f2038;position:sticky;top:0}
+    header img{height:24px;width:24px;border-radius:4px;background:#fff}
+    header h1{margin:0;font-size:16px;font-weight:600}
+    main{max-width:1100px;margin:24px auto;padding:0 16px}
+    .card{background:var(--panel);border:1px solid #1f2937;border-radius:10px;padding:16px}
+    form{display:grid;grid-template-columns:1fr auto;gap:8px;margin:8px 0 10px}
+    input[type=text]{padding:10px 12px;border-radius:8px;border:1px solid #263243;background:#0b1320;color:var(--ink)}
+    button{background:var(--brand);color:#00131e;border:0;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
+    button:hover{filter:brightness(1.05)}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+    .pill{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;border:1px solid #273247;color:#93c5fd;background:#0b1a2d}
+    h2{margin:16px 0 8px;font-size:16px;border-bottom:1px dashed #243043;padding-bottom:6px}
+    .doc{border:1px solid #263243;border-radius:10px;padding:12px;margin:10px 0;background:#0b1320}
+    .meta{font-size:12px;color:var(--muted);margin-top:4px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    mark{background:var(--hl);color:#111}
+    a{color:#93c5fd;text-decoration:none}
+    a:hover{text-decoration:underline}
+  </style>
 </head>
 <body>
-  <header>
-    <img src="https://texts.wwwbcb.org/texts/logo.png" alt="Logo" style="height:28px;background:#fff;border-radius:6px;padding:4px">
-    <div class="brand">Texts Search Tool</div>
-    <div class="muted" style="margin-left:auto;font-size:12px">Searches TXT via catalogs on <strong>texts.wwwbcb.org</strong></div>
-  </header>
-
-  <main>
-    <div class="panel">
-      <div class="row">
-        <input id="q" type="text" placeholder="e.g., beddoe consent litigation; use quotes for phrases" />
-        <button id="go">Search</button>
-        <div class="opt">
-          <label><input type="checkbox" id="orMode"> OR mode</label>
-          <label title="How much context around each hit to show"><span class="muted">Window:</span>
-            <select id="win">
-              <option value="160">~160 chars</option>
-              <option value="240" selected>~240 chars</option>
-              <option value="360">~360 chars</option>
-              <option value="520">~520 chars</option>
-            </select>
-          </label>
-          <label title="Max snippets per document"><span class="muted">Snippets/doc:</span>
-            <select id="maxh">
-              <option>3</option><option selected>6</option><option>12</option><option>24</option>
-            </select>
-          </label>
-        </div>
-      </div>
-      <div class="chips">
-        <span class="chip">Textbooks (catalog)</span>
-        <span class="chip">Laws</span>
-        <span class="chip">Rules</span>
-      </div>
-      <div id="note" class="progress"></div>
+<header>
+  <img src="./logo.png" alt="">
+  <h1>Texts Search Tool</h1>
+</header>
+<main>
+  <div class="card">
+    <div class="tabs">
+      <span class="pill">Textbooks (catalog)</span>
+      <span class="pill">Laws</span>
+      <span class="pill">Rules</span>
     </div>
+    <form id="f">
+      <input id="q" type="text" placeholder='e.g., beddoe consent litigation; use quotes for phrases' />
+      <button type="submit">Search</button>
+    </form>
+    <small id="meta"></small>
 
-    <section>
-      <h2>Textbooks</h2>
-      <div id="cards-textbooks" class="cards"></div>
-      <div id="err-textbooks" class="err"></div>
-    </section>
+    <h2>Textbooks</h2>
+    <div id="b"></div>
 
-    <section>
-      <h2>Laws</h2>
-      <div id="cards-laws" class="cards"></div>
-      <div id="err-laws" class="err"></div>
-    </section>
+    <h2>Laws</h2>
+    <div id="l"></div>
 
-    <section>
-      <h2>Rules</h2>
-      <div id="cards-rules" class="cards"></div>
-      <div id="err-rules" class="err"></div>
-    </section>
-
-    <div class="sep"></div>
-    <footer>If a catalog URL fails, check the paths inside <code>texts/catalog.json</code>, <code>laws.json</code>, or <code>rules.json</code> on <em>texts.wwwbcb.org</em>.</footer>
-  </main>
+    <h2>Rules</h2>
+    <div id="r"></div>
+  </div>
+</main>
 
 <script>
-/* ===================== CONFIG ===================== */
-const CATALOGS = {
-  textbooks: "https://texts.wwwbcb.org/texts/catalog.json",
-  laws:      "https://texts.wwwbcb.org/laws.json",
-  rules:     "https://texts.wwwbcb.org/rules.json"
+const CATS = {
+  textbooks: 'https://texts.wwwbcb.org/texts/catalog.json',
+  laws:      'https://texts.wwwbcb.org/laws.json',
+  rules:     'https://texts.wwwbcb.org/rules.json'
 };
-/* ================================================== */
 
-const el = (id)=>document.getElementById(id);
+const $ = s=>document.querySelector(s);
+const buckets = { b:$('#b'), l:$('#l'), r:$('#r') };
+const meta = $('#meta');
 
-function parseTerms(q){
-  // supports "quoted phrases" and single words
-  const m = q.match(/"([^"]+)"|(\S+)/g) || [];
-  return m.map(s => s.replace(/^"(.*)"$/,'$1').trim()).filter(Boolean);
+function resolveUrl(urlTxt, catalogUrl){
+  return new URL(urlTxt, catalogUrl).href;  // **fix: resolve against catalog origin**
 }
-function highlight(text, terms){
-  let safe=text;
-  // Sort longer terms first to keep nesting sensible
-  const ordered=[...terms].sort((a,b)=>b.length-a.length);
-  for (const t of ordered){
-    const re=new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
-    safe = safe.replace(re, m => `<mark>${m}</mark>`);
-  }
-  return safe;
-}
-function* findWindows(text, terms, {orMode=false, win=240, maxHits=6}={}){
-  const lower=text.toLowerCase();
-  const needles=terms.map(t=>t.toLowerCase());
-  let hits=0, lastEnd=-9999;
-  for (const t of needles){
-    // quick pre-check to fail fast
-    if (!orMode && !lower.includes(t)) return;
-  }
-  // Find all candidate indices (union across terms)
-  const idxs=new Set();
-  for (const t of needles){
-    let i=0;
-    while((i=lower.indexOf(t,i))!==-1){ idxs.add(i); i+=t.length; }
-  }
-  const sorted=[...idxs].sort((a,b)=>a-b);
-  for (const i of sorted){
-    const start=Math.max(0, i - Math.floor(win/2));
-    const end  =Math.min(text.length, start + win);
-    if (start < lastEnd-20) continue; // merge-ish nearby hits
-    const slice=text.slice(start,end);
-    const sliceLower=slice.toLowerCase();
-    const ok = orMode ? needles.some(n=>sliceLower.includes(n))
-                      : needles.every(n=>sliceLower.includes(n));
-    if (!ok) continue;
-    lastEnd=end; hits++;
-    yield slice.trim();
-    if (hits>=maxHits) break;
-  }
-}
-function cardHTML(item, snippets, group){
-  const title = item.title || "Untitled";
-  const href  = item.url_txt;
-  const meta  = [item.jurisdiction, item.year].filter(Boolean).join(" · ");
-  const snips = snippets.map(s=>`<div class="snip">${s}</div>`).join("");
-  return `
-  <div class="card">
-    <div class="meta"><span class="badge">${group}</span><span>${meta || ""}</span></div>
-    <h3>${title}</h3>
-    ${snips || `<div class="snip"><span class="muted">No in-window matches, but terms may exist elsewhere.</span></div>`}
-    <a class="btn" href="${href}" target="_blank" rel="noopener">open TXT</a>
-  </div>`;
-}
+
 async function fetchJSON(url){
-  const r = await fetch(url,{cache:"no-store"});
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
-async function fetchText(url){
-  const r = await fetch(url,{cache:"no-store"});
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.text();
-}
-function setNote(msg){ el("note").textContent = msg; }
-function setError(where, msg){ el(`err-${where}`).textContent = msg || ""; }
-function clearResults(){
-  for (const k of ["textbooks","laws","rules"]){
-    el(`cards-${k}`).innerHTML=""; setError(k,"");
-  }
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error(`Fetch ${url} → ${r.status}`);
+  return await r.json();
 }
 
-async function run(){
-  const q = el("q").value.trim();
-  if (!q){ el("q").focus(); return; }
-  clearResults();
+function esc(s){ return s.replace(/[&<>]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m])); }
 
-  const terms = parseTerms(q);
-  const orMode = el("orMode").checked;
-  const win = parseInt(el("win").value,10);
-  const maxHits = parseInt(el("maxh").value,10);
-  const opts = {orMode, win, maxHits};
+function hilite(text, q){
+  if(!q) return esc(text);
+  const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+  return esc(text).replace(rx, m=>`<mark>${esc(m)}</mark>`);
+}
 
-  setNote(`Loading catalogs…`);
-  let catalogs;
-  try{
-    // Load all catalogs in parallel
-    const [t,l,r] = await Promise.all([
-      fetchJSON(CATALOGS.textbooks).catch(e=>({__err:e})),
-      fetchJSON(CATALOGS.laws).catch(e=>({__err:e})),
-      fetchJSON(CATALOGS.rules).catch(e=>({__err:e})),
-    ]);
-    catalogs = {textbooks:t, laws:l, rules:r};
-  }catch(e){
-    setNote("");
-    alert("Failed to load catalogs. Check CATALOGS URLs.");
-    return;
-  }
+async function sample(url){
+  // fetch a window so we can show a quote; adjust if servers ignore Range
+  const r = await fetch(url, {headers:{'Range':'bytes=0-4095'}});
+  const t = await r.text();
+  return t.replace(/\s+/g,' ').slice(0, 420)+'…';
+}
 
-  // Helper to process one group
-  async function processGroup(group){
-    const list = Array.isArray(catalogs[group]) ? catalogs[group] : [];
-    if (catalogs[group]?.__err){
-      setError(group, `Catalog error: ${catalogs[group].__err.message}`);
-      return;
-    }
-    if (!list.length){
-      setError(group, `No items in ${group} catalog.`);
-      return;
-    }
-    const container = el(`cards-${group}`);
-    let done=0, shown=0, failed=0;
-    for (const item of list){
-      const url=item.url_txt;
-      done++;
-      setNote(`Searching ${group}… ${done}/${list.length}`);
-      if (!url){ failed++; continue; }
-      try{
-        const text = await fetchText(url);
-        const snippets=[...findWindows(text, terms, opts)].map(s=>highlight(s,terms));
-        if (snippets.length){
-          container.insertAdjacentHTML("beforeend", cardHTML(item, snippets, group));
-          shown++;
-        }
-      }catch(e){
-        failed++;
-        // Show a small red line inline if the fetch itself failed
-        const errLine = document.createElement("div");
-        errLine.className="err";
-        errLine.textContent=`Fetch failed: ${item.title} (${url}) — ${e.message}`;
-        container.appendChild(errLine);
+async function searchBucket(list, catalogUrl, query, outEl){
+  outEl.innerHTML = '';
+  let hits = 0;
+  for(const item of list){
+    const url = resolveUrl(item.url_txt, catalogUrl);
+    try{
+      const snippet = await sample(url);
+      if(!query || snippet.match(new RegExp(query, 'i'))){
+        hits++;
+        const div = document.createElement('div');
+        div.className = 'doc';
+        div.innerHTML = `
+          <div><strong>${esc(item.title || '(untitled)')}</strong></div>
+          <div class="meta mono">${esc(url)}</div>
+          <p>${hilite(snippet, query)}</p>
+          <a class="pill" href="${url}" target="_blank" rel="noopener">open TXT</a>
+        `;
+        outEl.appendChild(div);
       }
+    }catch(e){
+      const div = document.createElement('div');
+      div.className = 'doc';
+      div.innerHTML = `
+        <div><strong>${esc(item.title || '(untitled)')}</strong></div>
+        <div class="meta mono">${esc(url)}</div>
+        <p style="color:#fca5a5">Fetch failed.</p>`;
+      outEl.appendChild(div);
     }
-    setError(group, failed ? `Completed with ${failed} fetch error(s).` : "");
-    setNote(`Done. Matches — Textbooks: ${el('cards-textbooks').children.length} · Laws: ${el('cards-laws').children.length} · Rules: ${el('cards-rules').children.length}`);
   }
-
-  // Run groups sequentially to keep memory sensible with big files
-  await processGroup("textbooks");
-  await processGroup("laws");
-  await processGroup("rules");
+  return hits;
 }
 
-document.getElementById("go").addEventListener("click", run);
-document.getElementById("q").addEventListener("keydown", (e)=>{ if(e.key==="Enter") run(); });
+async function run(q){
+  meta.textContent = 'Loading catalogs…';
+  const [books, laws, rules] = await Promise.all([
+    fetchJSON(CATS.textbooks),
+    fetchJSON(CATS.laws),
+    fetchJSON(CATS.rules)
+  ]);
+  meta.textContent = 'Searching…';
+  const [hb, hl, hr] = await Promise.all([
+    searchBucket(books, CATS.textbooks, q, buckets.b),
+    searchBucket(laws,  CATS.laws,      q, buckets.l),
+    searchBucket(rules, CATS.rules,     q, buckets.r)
+  ]);
+  meta.textContent = `Matches — Textbooks: ${hb} · Laws: ${hl} · Rules: ${hr}`;
+}
 
-// Optional: auto-run if q= is present in the URL
-const params = new URLSearchParams(location.search);
-if (params.get("q")){ el("q").value=params.get("q"); run(); }
+document.getElementById('f').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  run($('#q').value.trim());
+});
+
+// Run if ?q= in URL
+const sp = new URLSearchParams(location.search);
+if(sp.get('q')){
+  $('#q').value = sp.get('q');
+  run(sp.get('q'));
+}
 </script>
 </body>
 </html>
