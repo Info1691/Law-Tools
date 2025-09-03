@@ -1,0 +1,66 @@
+name: normalize-text
+on:
+  workflow_dispatch:
+    inputs:
+      src_repo:
+        description: "Source repo (e.g., lex-ingest-local)"
+        required: true
+        default: "lex-ingest-local"
+      src_path:
+        description: "Path to the source TXT in src_repo (e.g., texts/jersey/litigating-trust-disputes-in-jersey.txt)"
+        required: true
+      dst_path:
+        description: "Destination path in Law-Texts-ui (e.g., data/textbooks/jersey/Litigating-trust-disputes-in-jersey.txt)"
+        required: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Law-Tools
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm ci || npm i iconv-lite he
+
+      - name: Fetch source TXT
+        id: fetch
+        env:
+          GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Fetching raw file…"
+          RAW_URL="https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.event.inputs.src_repo }}/main/${{ github.event.inputs.src_path }}"
+          curl -fSL "$RAW_URL" -o /tmp/src.txt
+
+      - name: Normalize
+        run: node scripts/normalize.mjs /tmp/src.txt /tmp/out.txt
+
+      - name: Checkout Law-Texts-ui
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Law-Texts-ui
+          path: law-texts-ui
+          token: ${{ secrets.TEXTS_RW_TOKEN }}
+
+      - name: Write normalized file
+        run: |
+          set -euo pipefail
+          mkdir -p "law-texts-ui/$(dirname '${{ github.event.inputs.dst_path }}')"
+          cp /tmp/out.txt "law-texts-ui/${{ github.event.inputs.dst_path }}"
+
+      - name: Commit
+        working-directory: law-texts-ui
+        run: |
+          git config user.name "law-tools-bot"
+          git config user.email "law-tools-bot@users.noreply.github.com"
+          git add "${{ github.event.inputs.dst_path }}"
+          git commit -m "Normalize TXT: ${{ github.event.inputs.dst_path }}" || echo "Nothing to commit"
+          git push
