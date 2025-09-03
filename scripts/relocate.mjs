@@ -1,162 +1,223 @@
-// Relocate TXT files across repos using GitHub Contents API.
-// Supports create or update (handles required SHA automatically).
-
+// scripts/relocate.mjs
 import { Octokit } from "@octokit/rest";
-import fs from "node:fs/promises";
 
-const token =
-  process.env.GH_TOKEN ||
-  process.env.GITHUB_TOKEN ||
-  process.env.GH_PAT;
-
-if (!token) {
-  throw new Error("Missing GH_TOKEN / GITHUB_TOKEN / GH_PAT in env.");
+const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+if (!TOKEN) {
+  console.error("No GH_TOKEN provided");
+  process.exit(1);
 }
+const octo = new Octokit({ auth: TOKEN });
 
-const octokit = new Octokit({ auth: token });
+const DEFAULT_REPOS = (process.env.INPUT_REPOS || "").trim()
+  || "Info1691/Law-Texts-ui,Info1691/laws-ui,Info1691/rules-ui,Info1691/lex-ingest-local";
 
-/**
- * Plan format (array). Example item:
- * {
- *   "from": { "owner":"Info1691", "repo":"rules-ui", "path":"data/rules/uk/icaew-code.txt", "ref":"main" },
- *   "to":   { "owner":"Info1691", "repo":"Law-Texts-ui", "path":"data/rules/uk/icaew-code.txt", "ref":"main" },
- *   "message": "Relocate: ICAEW code",
- *   "deleteSource": false
- * }
- */
-async function loadPlan() {
-  const fromInput = process.env.PLAN && process.env.PLAN.trim();
-  if (fromInput) {
-    try { return JSON.parse(fromInput); }
-    catch (e) { throw new Error("PLAN input is not valid JSON."); }
-  }
-  const planPath = (process.env.PLAN_PATH || "").trim();
-  if (planPath) {
-    const raw = await fs.readFile(planPath, "utf8");
-    return JSON.parse(raw);
-  }
-  // Fallback demo — edit or provide PLAN/PLAN_PATH
-  return [
-    // Example (comment out or replace)
-    // {
-    //   from:{owner:"Info1691",repo:"rules-ui",path:"data/rules/uk/icaew-code.txt",ref:"main"},
-    //   to:{owner:"Info1691",repo:"Law-Texts-ui",path:"data/rules/uk/icaew-code.txt",ref:"main"},
-    //   message:"Relocate: icaew-code.txt",
-    //   deleteSource:false
-    // }
-  ];
-}
+const INPUT_PLAN = (process.env.INPUT_PLAN || "").trim();
 
-async function getFile(o, r, p, ref = "main") {
+// ---- helpers ---------------------------------------------------------------
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const ownerRepo = (full) => {
+  const [owner, repo] = full.split("/");
+  return { owner, repo };
+};
+
+const getHeadSha = async ({ owner, repo, ref = "main" }) => {
+  const { data } = await octo.rest.git.getRef({ owner, repo, ref: `heads/${ref}` });
+  return data.object.sha;
+};
+
+const listTxtFiles = async ({ owner, repo, ref = "main" }) => {
+  // enumerate all files via git tree (fast) and filter .txt
+  const sha = await getHeadSha({ owner, repo, ref });
+  const { data } = await octo.rest.git.getTree({ owner, repo, tree_sha: sha, recursive: "1" });
+  return (data.tree || [])
+    .filter(n => n.type === "blob" && n.path.toLowerCase().endsWith(".txt"))
+    .map(n => ({ path: n.path }));
+};
+
+const readFile = async ({ owner, repo, path, ref = "main" }) => {
   try {
-    const res = await octokit.repos.getContent({ owner: o, repo: r, path: p, ref });
-    if (Array.isArray(res.data)) throw new Error(`Path ${p} is a directory, expected file.`);
-    return {
-      sha: res.data.sha,
-      encoding: res.data.encoding,
-      content: res.data.content // base64
-    };
-  } catch (err) {
-    if (err.status === 404) return null;
-    throw err;
+    const { data } = await octo.rest.repos.getContent({ owner, repo, path, ref });
+    if (Array.isArray(data)) return null;
+    return Buffer.from(data.content, "base64").toString("utf8");
+  } catch (e) {
+    if (e.status !== 404) console.error("readFile error", path, e.message);
+    return null;
   }
-}
+};
 
-function normalizeBase64(b64) {
-  // decode → normalize line endings → re-encode
-  const text = Buffer.from(b64, "base64").toString("utf8").replace(/\r\n?/g, "\n");
-  return Buffer.from(text, "utf8").toString("base64");
-}
-
-async function putFile({ owner, repo, path, branch, message, contentB64, sha }) {
-  return octokit.repos.createOrUpdateFileContents({
-    owner, repo, path,
-    message,
-    content: contentB64,
-    branch: branch || "main",
-    sha // include only if updating
+const writeFile = async ({ owner, repo, path, message, content, branch = "main" }) => {
+  // fetch existing to get sha if needed (upsert)
+  let sha = undefined;
+  try {
+    const { data } = await octo.rest.repos.getContent({ owner, repo, path, ref: branch });
+    if (!Array.isArray(data) && data.sha) sha = data.sha;
+  } catch (e) {
+    // 404 is fine
+  }
+  await octo.rest.repos.createOrUpdateFileContents({
+    owner, repo, path, message,
+    content: Buffer.from(content, "utf8").toString("base64"),
+    branch, sha
   });
-}
+};
 
-async function deleteFile({ owner, repo, path, branch, message, sha }) {
-  return octokit.repos.deleteFile({
-    owner, repo, path,
-    message: message || `Delete ${path}`,
-    branch: branch || "main",
-    sha
+const prettyTitle = (basename) => {
+  // turn "breach-of-trust-text-by-birks-and-pretto.txt" into "Breach of Trust — Birks & Pretto"
+  const stem = basename.replace(/\.txt$/i, "");
+  return stem
+    .replace(/-/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\b(\w)/g, (m) => m.toUpperCase());
+};
+
+const ensureCatalogEntry = async ({ kind, jurisdiction, relPath, title }) => {
+  const owner = "Info1691";
+  const repo = "Law-Texts-ui";
+  const branch = "main";
+  let catPath;
+  if (kind === "textbook") catPath = "texts/catalog.json";
+  else if (kind === "law") catPath = "laws.json";
+  else if (kind === "rule") catPath = "rules.json";
+  else return;
+
+  let raw = await readFile({ owner, repo, path: catPath, ref: branch });
+  let arr = [];
+  if (raw) {
+    try { arr = JSON.parse(raw); } catch { arr = []; }
+  }
+  // normalize url_txt form (relative from root)
+  const url_txt = `./${relPath}`;
+  const already = arr.find(e => (e.url_txt || "").toLowerCase() === url_txt.toLowerCase());
+  if (!already) {
+    arr.push({
+      title: title || prettyTitle(relPath.split("/").pop()),
+      jurisdiction,
+      kind: (kind === "textbook" ? "textbook" : (kind === "law" ? "law" : "rule")),
+      url_txt
+    });
+    await writeFile({
+      owner, repo, path: catPath,
+      message: `catalog: add ${title || relPath}`,
+      content: JSON.stringify(arr, null, 2),
+      branch
+    });
+  }
+};
+
+const canonicalFor = ({ repo, path }) => {
+  const p = path.replace(/\\/g, "/");
+  const lower = p.toLowerCase();
+
+  let kind = "textbook";
+  if (repo.toLowerCase().includes("laws-ui") || /\/laws\//.test(lower)) kind = "law";
+  if (repo.toLowerCase().includes("rules-ui") || /\/rules\//.test(lower)) kind = "rule";
+
+  // jurisdiction guess from path
+  let jurisdiction = "uk";
+  if (/(^|\/)(jersey)(\/|$)/.test(lower)) jurisdiction = "jersey";
+
+  const base = p.split("/").pop(); // keep original filename (already normalized in your repos)
+  let relPath;
+  if (kind === "textbook") relPath = `data/textbooks/${jurisdiction}/${base}`;
+  else if (kind === "law")   relPath = `data/laws/${jurisdiction}/${base}`;
+  else                       relPath = `data/rules/${jurisdiction}/${base}`;
+
+  return { kind, jurisdiction, destRepo: "Law-Texts-ui", destOwner: "Info1691", destPath: relPath };
+};
+
+// ---- main: plan + execute --------------------------------------------------
+
+const autoPlan = async () => {
+  const entries = [];
+  const targets = DEFAULT_REPOS.split(",").map(s => s.trim()).filter(Boolean);
+  for (const full of targets) {
+    const { owner, repo } = ownerRepo(full);
+    const files = await listTxtFiles({ owner, repo, ref: "main" });
+
+    for (const f of files) {
+      // skip already canonical in Law-Texts-ui
+      if (repo === "Law-Texts-ui" && /^data\/(textbooks|laws|rules)\/(jersey|uk)\/.+\.txt$/i.test(f.path)) {
+        continue;
+      }
+      const { kind, jurisdiction, destOwner, destRepo, destPath } = canonicalFor({ repo, path: f.path });
+      entries.push({
+        fromOwner: owner, fromRepo: repo, fromBranch: "main", fromPath: f.path,
+        toOwner: destOwner, toRepo: destRepo, toBranch: "main", toPath: destPath,
+        kind, jurisdiction
+      });
+    }
+  }
+  return entries;
+};
+
+const fetchContentBase64 = async ({ owner, repo, path, ref = "main" }) => {
+  const { data } = await octo.rest.repos.getContent({ owner, repo, path, ref });
+  if (Array.isArray(data)) throw new Error("Expected file, got directory");
+  return data.content; // base64
+};
+
+const putFileBase64 = async ({ owner, repo, path, branch = "main", message, b64 }) => {
+  let sha = undefined;
+  try {
+    const { data } = await octo.rest.repos.getContent({ owner, repo, path, ref: branch });
+    if (!Array.isArray(data)) sha = data.sha;
+  } catch (e) {}
+  await octo.rest.repos.createOrUpdateFileContents({
+    owner, repo, path, message, branch, content: b64, sha
   });
-}
+};
 
-function prettyMove(mv) {
-  const s = mv.from, d = mv.to;
-  return `${s.owner}/${s.repo}@${s.ref || "main"}:${s.path} → ${d.owner}/${d.repo}@${d.ref || "main"}:${d.path}`;
-}
+const run = async () => {
+  let plan = [];
+  if (INPUT_PLAN) {
+    try { plan = JSON.parse(INPUT_PLAN); }
+    catch (e) {
+      console.error("Invalid plan JSON:", e.message);
+      process.exit(1);
+    }
+  } else {
+    console.log("No plan provided; running auto-discovery…");
+    plan = await autoPlan();
+  }
 
-(async () => {
-  const plan = await loadPlan();
-  if (!Array.isArray(plan) || plan.length === 0) {
-    console.log("No moves in plan. Provide PLAN JSON or PLAN_PATH.");
+  if (!plan.length) {
+    console.log("Nothing to move. Done.");
     return;
   }
 
-  const results = [];
-  for (const mv of plan) {
-    console.log(`\n=== ${prettyMove(mv)} ===`);
-    const src = mv.from, dst = mv.to;
-    const message = mv.message || `Relocate ${src.path} → ${dst.path}`;
-
-    // 1) Read source
-    const srcFile = await getFile(src.owner, src.repo, src.path, src.ref || "main");
-    if (!srcFile) {
-      results.push({ move: mv, ok: false, reason: "source-not-found" });
-      console.error("Source file not found.");
-      continue;
-    }
-    const contentB64 = normalizeBase64(srcFile.content);
-
-    // 2) Check if destination exists (to get SHA for update)
-    const dstFile = await getFile(dst.owner, dst.repo, dst.path, dst.ref || "main");
-    const dstSha = dstFile ? dstFile.sha : undefined;
-
-    // 3) Write destination
+  // Execute moves (create/update in Law-Texts-ui; leave source in place)
+  for (const item of plan) {
+    const label = `${item.fromRepo}:${item.fromPath}  ->  ${item.toRepo}:${item.toPath}`;
     try {
-      await putFile({
-        owner: dst.owner, repo: dst.repo, path: dst.path,
-        branch: dst.ref || "main",
-        message, contentB64, sha: dstSha
+      const b64 = await fetchContentBase64({
+        owner: item.fromOwner, repo: item.fromRepo, path: item.fromPath, ref: item.fromBranch
       });
-      console.log("Wrote destination:", `${dst.repo}/${dst.path}`, dstSha ? "(updated)" : "(created)");
+
+      await putFileBase64({
+        owner: item.toOwner, repo: item.toRepo, path: item.toPath, branch: item.toBranch,
+        message: `relocate: ${item.fromRepo}/${item.fromPath} -> ${item.toPath}`,
+        b64
+      });
+
+      // catalog
+      await ensureCatalogEntry({
+        kind: item.kind,
+        jurisdiction: item.jurisdiction,
+        relPath: item.toPath,
+        title: prettyTitle(item.toPath.split("/").pop())
+      });
+
+      console.log("OK:", label);
+      await sleep(200); // be polite to API
     } catch (e) {
-      console.error("Write failed:", e.status, e.message);
-      results.push({ move: mv, ok: false, reason: "dest-write-failed", detail: e.message });
-      continue;
+      console.error("FAIL:", label, e.status || "", e.message);
     }
-
-    // 4) Optionally delete source
-    if (mv.deleteSource) {
-      try {
-        await deleteFile({
-          owner: src.owner, repo: src.repo, path: src.path,
-          branch: src.ref || "main",
-          message: `Relocate: remove ${src.path}`,
-          sha: srcFile.sha
-        });
-        console.log("Deleted source:", `${src.repo}/${src.path}`);
-      } catch (e) {
-        console.warn("Delete source failed:", e.status, e.message);
-        results.push({ move: mv, ok: true, warn: "delete-failed", detail: e.message });
-        continue;
-      }
-    }
-
-    results.push({ move: mv, ok: true });
   }
+};
 
-  // Summary
-  const ok = results.filter(r => r.ok).length;
-  const fail = results.length - ok;
-  console.log(`\nDone. OK: ${ok}, Failed: ${fail}`);
-  if (fail) {
-    process.exitCode = 1;
-  }
-})();
+run().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
