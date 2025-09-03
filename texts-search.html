@@ -1,159 +1,107 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Texts Search Tool</title>
-  <link rel="icon" href="./logo.png" />
-  <style>
-    :root{
-      --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --muted:#9ca3af; --brand:#0ea5e9; --accent:#60a5fa; --hl:#fde047;
-    }
-    html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
-    header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:#0b1220;border-bottom:1px solid #0f2038;position:sticky;top:0}
-    header img{height:24px;width:24px;border-radius:4px;background:#fff}
-    header h1{margin:0;font-size:16px;font-weight:600}
-    main{max-width:1100px;margin:24px auto;padding:0 16px}
-    .card{background:var(--panel);border:1px solid #1f2937;border-radius:10px;padding:16px}
-    form{display:grid;grid-template-columns:1fr auto;gap:8px;margin:8px 0 10px}
-    input[type=text]{padding:10px 12px;border-radius:8px;border:1px solid #263243;background:#0b1320;color:var(--ink)}
-    button{background:var(--brand);color:#00131e;border:0;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
-    button:hover{filter:brightness(1.05)}
-    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
-    .pill{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;border:1px solid #273247;color:#93c5fd;background:#0b1a2d}
-    h2{margin:16px 0 8px;font-size:16px;border-bottom:1px dashed #243043;padding-bottom:6px}
-    .doc{border:1px solid #263243;border-radius:10px;padding:12px;margin:10px 0;background:#0b1320}
-    .meta{font-size:12px;color:var(--muted);margin-top:4px}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-    mark{background:var(--hl);color:#111}
-    a{color:#93c5fd;text-decoration:none}
-    a:hover{text-decoration:underline}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Texts Search Tool</title>
+<style>
+  :root { --bg:#0b1020; --panel:#121733; --text:#f3f5ff; --muted:#a9b2d4; --link:#8ab4ff; --hit:#fff176; }
+  html,body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0}
+  header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:var(--panel)}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  main{padding:18px}
+  .bar{display:flex;gap:.5rem;align-items:center;margin-bottom:12px}
+  .bar input{flex:1;padding:9px 12px;border-radius:8px;border:1px solid #293062;background:#0f1530;color:var(--text)}
+  button{background:#2b62ff;border:0;color:#fff;padding:9px 14px;border-radius:8px;font-weight:600;cursor:pointer}
+  .section{margin-top:18px}
+  .card{background:#0f1530;border:1px solid #263057;border-radius:10px;padding:12px 14px;margin:10px 0}
+  .card h3{margin:0 0 6px 0;font-size:15px}
+  .muted{color:var(--muted)}
+  a{color:var(--link);text-decoration:none}
+  mark{background:var(--hit);color:#000;padding:0 .1em;border-radius:3px}
+</style>
 </head>
 <body>
-<header>
-  <img src="./logo.png" alt="">
-  <h1>Texts Search Tool</h1>
-</header>
+<header><h1>Texts Search Tool</h1></header>
 <main>
-  <div class="card">
-    <div class="tabs">
-      <span class="pill">Textbooks (catalog)</span>
-      <span class="pill">Laws</span>
-      <span class="pill">Rules</span>
-    </div>
-    <form id="f">
-      <input id="q" type="text" placeholder='e.g., beddoe consent litigation; use quotes for phrases' />
-      <button type="submit">Search</button>
-    </form>
-    <small id="meta"></small>
-
-    <h2>Textbooks</h2>
-    <div id="b"></div>
-
-    <h2>Laws</h2>
-    <div id="l"></div>
-
-    <h2>Rules</h2>
-    <div id="r"></div>
+  <div class="bar">
+    <input id="q" placeholder="e.g., beddoe consent litigation; use quotes for phrases" />
+    <button id="go">Search</button>
   </div>
+  <div class="muted" style="margin-bottom:10px;">
+    Searches TXT via catalogs on <code>texts.wwwbcb.org</code>. Relative <code>url_txt</code> entries are resolved against their catalog URL.
+  </div>
+
+  <div id="out"></div>
 </main>
 
 <script>
-const CATS = {
+const $ = s => document.querySelector(s);
+const out = $('#out');
+
+const CATALOGS = {
   textbooks: 'https://texts.wwwbcb.org/texts/catalog.json',
   laws:      'https://texts.wwwbcb.org/laws.json',
   rules:     'https://texts.wwwbcb.org/rules.json'
 };
 
-const $ = s=>document.querySelector(s);
-const buckets = { b:$('#b'), l:$('#l'), r:$('#r') };
-const meta = $('#meta');
+async function fetchJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(url+': '+r.status); return await r.json(); }
+const abs = (u, base) => new URL(u, base).toString();
 
-function resolveUrl(urlTxt, catalogUrl){
-  return new URL(urlTxt, catalogUrl).href;  // **fix: resolve against catalog origin**
+function snippet(text, q, window=240){
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return null;
+  const s = Math.max(0, i - Math.floor(window/2));
+  const e = Math.min(text.length, s + window);
+  let t = text.slice(s, e).replace(/\s+/g, ' ');
+  const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig');
+  t = t.replace(rx, m => `<mark>${m}</mark>`);
+  return (s>0?'…':'') + t + (e<text.length?'…':'');
 }
 
-async function fetchJSON(url){
-  const r = await fetch(url, {cache:'no-store'});
-  if(!r.ok) throw new Error(`Fetch ${url} → ${r.status}`);
-  return await r.json();
-}
-
-function esc(s){ return s.replace(/[&<>]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m])); }
-
-function hilite(text, q){
-  if(!q) return esc(text);
-  const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
-  return esc(text).replace(rx, m=>`<mark>${esc(m)}</mark>`);
-}
-
-async function sample(url){
-  // fetch a window so we can show a quote; adjust if servers ignore Range
-  const r = await fetch(url, {headers:{'Range':'bytes=0-4095'}});
-  const t = await r.text();
-  return t.replace(/\s+/g,' ').slice(0, 420)+'…';
-}
-
-async function searchBucket(list, catalogUrl, query, outEl){
-  outEl.innerHTML = '';
-  let hits = 0;
-  for(const item of list){
-    const url = resolveUrl(item.url_txt, catalogUrl);
+async function searchOne(name, catURL, q){
+  let items = await fetchJSON(catURL);
+  items = Array.isArray(items) ? items : (items.items || items.textbooks || items.entries || []);
+  const results = [];
+  for (const it of items){
+    const title = it.title || it.name || it.id || '(untitled)';
+    const url   = abs(it.url_txt, catURL);
     try{
-      const snippet = await sample(url);
-      if(!query || snippet.match(new RegExp(query, 'i'))){
-        hits++;
-        const div = document.createElement('div');
-        div.className = 'doc';
-        div.innerHTML = `
-          <div><strong>${esc(item.title || '(untitled)')}</strong></div>
-          <div class="meta mono">${esc(url)}</div>
-          <p>${hilite(snippet, query)}</p>
-          <a class="pill" href="${url}" target="_blank" rel="noopener">open TXT</a>
-        `;
-        outEl.appendChild(div);
-      }
-    }catch(e){
-      const div = document.createElement('div');
-      div.className = 'doc';
-      div.innerHTML = `
-        <div><strong>${esc(item.title || '(untitled)')}</strong></div>
-        <div class="meta mono">${esc(url)}</div>
-        <p style="color:#fca5a5">Fetch failed.</p>`;
-      outEl.appendChild(div);
-    }
+      const r = await fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-32767' }});
+      if (!r.ok && r.status !== 206) continue;
+      const txt = await r.text();
+      const sn = snippet(txt, q);
+      if (sn) results.push({title, url, sn});
+    }catch(_){}
   }
-  return hits;
+  if (!results.length) return '';
+  return `
+    <div class="section">
+      <h2>${name[0].toUpperCase()+name.slice(1)}</h2>
+      ${results.map(r => `
+        <div class="card">
+          <h3><a href="${r.url}" target="_blank" rel="noopener">${r.title}</a></h3>
+          <div class="muted">${r.sn}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
-async function run(q){
-  meta.textContent = 'Loading catalogs…';
-  const [books, laws, rules] = await Promise.all([
-    fetchJSON(CATS.textbooks),
-    fetchJSON(CATS.laws),
-    fetchJSON(CATS.rules)
+async function run(){
+  const q = $('#q').value.trim();
+  if (!q) return;
+  out.innerHTML = `<div class="muted">Searching…</div>`;
+  const parts = await Promise.all([
+    searchOne('textbooks', CATALOGS.textbooks, q),
+    searchOne('laws',      CATALOGS.laws,      q),
+    searchOne('rules',     CATALOGS.rules,     q),
   ]);
-  meta.textContent = 'Searching…';
-  const [hb, hl, hr] = await Promise.all([
-    searchBucket(books, CATS.textbooks, q, buckets.b),
-    searchBucket(laws,  CATS.laws,      q, buckets.l),
-    searchBucket(rules, CATS.rules,     q, buckets.r)
-  ]);
-  meta.textContent = `Matches — Textbooks: ${hb} · Laws: ${hl} · Rules: ${hr}`;
+  out.innerHTML = parts.join('') || `<div class="muted">No matches.</div>`;
 }
 
-document.getElementById('f').addEventListener('submit', (e)=>{
-  e.preventDefault();
-  run($('#q').value.trim());
-});
-
-// Run if ?q= in URL
-const sp = new URLSearchParams(location.search);
-if(sp.get('q')){
-  $('#q').value = sp.get('q');
-  run(sp.get('q'));
-}
+$('#go').addEventListener('click', run);
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
 </script>
 </body>
 </html>
