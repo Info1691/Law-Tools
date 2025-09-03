@@ -1,143 +1,131 @@
-// catalog-sync.mjs
-// Scans canonical TXT locations in Law-Texts-ui and auto-fixes url_txt
-// in texts/catalog.json, laws.json, rules.json.
+// Rewrite every url_txt in the three catalogs to absolute URLs on texts.wwwbcb.org.
+// - Reads:  Law-Texts-ui/texts/catalog.json, laws.json, rules.json
+// - Writes: same paths, committing changes via GitHub API.
 //
-// Expected layout (served by texts.wwwbcb.org):
-//   data/textbooks/{jersey|uk}/*.txt
-//   data/laws/{jersey|uk}/*.txt
-//   data/rules/{jersey|uk}/*.txt
+// Required env:
+//   GH_TOKEN     -> PAT with repo scope (stored as GH_PAT secret in workflow)
+//   TEXTS_OWNER  -> "Info1691"
+//   TEXTS_REPO   -> "Law-Texts-ui"
+//   TEXTS_BRANCH -> "main"
+//   TEXTS_BASE   -> "https://texts.wwwbcb.org"
 
-import { Octokit } from '@octokit/rest';
+import { Octokit } from "@octokit/rest";
 
-const GH_TOKEN = process.env.GH_TOKEN || process.env.LAW_SYNC_TOKEN;
+const {
+  GH_TOKEN,
+  TEXTS_OWNER = "Info1691",
+  TEXTS_REPO = "Law-Texts-ui",
+  TEXTS_BRANCH = "main",
+  TEXTS_BASE = "https://texts.wwwbcb.org",
+} = process.env;
+
 if (!GH_TOKEN) {
-  console.error('Missing GH_TOKEN/LAW_SYNC_TOKEN env.');
+  console.error("GH_TOKEN is missing");
   process.exit(1);
 }
-const octo = new Octokit({ auth: GH_TOKEN });
 
-// --- config ---
-const OWNER = 'Info1691';              // org/user
-const TEXTS_REPO = 'Law-Texts-ui';     // catalogs live here
-const REF = 'main';
+const octokit = new Octokit({ auth: GH_TOKEN });
 
-const CATALOGS = [
-  { path: 'texts/catalog.json', kind: 'textbook' },
-  { path: 'laws.json',          kind: 'law' },
-  { path: 'rules.json',         kind: 'rule' }
+const CATALOG_PATHS = [
+  "texts/catalog.json",
+  "texts/laws.json",
+  "texts/rules.json",
 ];
 
-// Where we consider authoritative TXT files (by kind)
-const ROOTS = {
-  textbook: ['data/textbooks/jersey', 'data/textbooks/uk'],
-  law:      ['data/laws/jersey',      'data/laws/uk'],
-  rule:     ['data/rules/jersey',     'data/rules/uk']
-};
+function absolutizeUrlTxt(u) {
+  if (!u || typeof u !== "string") return u;
 
-// --- helpers ---
-const norm = s => s
-  .toLowerCase()
-  .replace(/\.txt$/, '')
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/-+/g, '-')
-  .replace(/^-|-$/g, '');
+  // Already absolute? leave it
+  if (/^https?:\/\//i.test(u)) return u;
 
-const base = p => p.split('/').pop();
-
-async function getHeadSha(owner, repo, ref) {
-  const { data } = await octo.git.getRef({ owner, repo, ref: `heads/${ref}` });
-  return data.object.sha;
-}
-
-async function listTxtUnder(owner, repo, ref, roots) {
-  const commitSha = await getHeadSha(owner, repo, ref);
-  const { data: tree } = await octo.git.getTree({
-    owner, repo, tree_sha: commitSha, recursive: 'true'
-  });
-
-  return tree.tree
-    .filter(n => n.type === 'blob' && n.path.endsWith('.txt'))
-    .filter(n => roots.some(r => n.path.startsWith(r)))
-    .map(n => n.path);
-}
-
-async function readJsonFile(owner, repo, path, ref) {
-  const { data } = await octo.repos.getContent({ owner, repo, path, ref });
-  const sha = data.sha;
-  const json = Buffer.from(data.content, 'base64').toString('utf8');
-  return { sha, text: json, obj: JSON.parse(json) };
-}
-
-async function writeJsonFile(owner, repo, path, ref, prevSha, obj, message) {
-  const content = Buffer.from(JSON.stringify(obj, null, 2) + '\n').toString('base64');
-  await octo.repos.createOrUpdateFileContents({
-    owner, repo, path, message, content, sha: prevSha, branch: ref
-  });
-}
-
-function buildIndex(paths) {
-  const m = new Map();
-  for (const p of paths) {
-    const k = norm(base(p));
-    m.set(k, p); // last wins; OK
+  // Common cases: "./data/...", "data/...", "/data/..."
+  let path = u.replace(/^\.\//, "");    // drop leading "./"
+  if (!path.startsWith("data/") && !path.startsWith("/data/")) {
+    // If someone put it elsewhere, just return as-is to avoid breaking unknowns
+    return u;
   }
-  return m;
+  if (!path.startsWith("/")) path = `/${path}`; // ensure leading slash
+
+  return `${TEXTS_BASE}${path}`;
 }
 
-function keyFromItem(item) {
-  // Prefer current url_txt filename; fall back to title slug
-  if (item.url_txt) return norm(base(item.url_txt));
-  if (item.title)   return norm(item.title);
-  return '';
-}
+function transformCatalog(jsonText, path) {
+  let arr;
+  try {
+    arr = JSON.parse(jsonText);
+  } catch (e) {
+    throw new Error(`Invalid JSON in ${path}: ${e.message}`);
+  }
 
-function relPath(p) {
-  // We want catalogs to keep relative paths against texts.wwwbcb.org root
-  return `./${p}`;
-}
-
-(async () => {
-  let totalChanged = 0;
-  for (const cat of CATALOGS) {
-    console.log(`\n==> Syncing ${cat.path} (${cat.kind})`);
-
-    // index real TXT files under canonical roots
-    const roots = ROOTS[cat.kind];
-    const files = await listTxtUnder(OWNER, TEXTS_REPO, REF, roots);
-    const index = buildIndex(files);
-
-    // read the catalog
-    const { sha, text, obj } = await readJsonFile(OWNER, TEXTS_REPO, cat.path, REF);
-
-    let changed = 0;
-    for (const item of obj) {
-      const k = keyFromItem(item);
-      if (!k) continue;
-
-      const foundPath = index.get(k);
-      if (!foundPath) continue; // nothing to change
-
-      const newUrl = relPath(foundPath);
-      if (item.url_txt !== newUrl) {
-        item.url_txt = newUrl;
-        changed++;
+  // Catalogs are arrays with at least url_txt fields
+  let changed = false;
+  const out = arr.map((item) => {
+    if (item && typeof item === "object" && "url_txt" in item) {
+      const before = item.url_txt;
+      const after = absolutizeUrlTxt(before);
+      if (before !== after) {
+        changed = true;
+        return { ...item, url_txt: after };
       }
     }
+    return item;
+  });
 
-    if (changed > 0) {
-      await writeJsonFile(
-        OWNER, TEXTS_REPO, cat.path, REF, sha, obj,
-        `catalog-sync: ${changed} url_txt updated in ${cat.path}`
-      );
-      console.log(`Updated ${changed} entries in ${cat.path}`);
-      totalChanged += changed;
+  return { changed, text: JSON.stringify(out, null, 2) + "\n" };
+}
+
+async function getFileSha(path) {
+  const { data } = await octokit.repos.getContent({
+    owner: TEXTS_OWNER,
+    repo: TEXTS_REPO,
+    path,
+    ref: TEXTS_BRANCH,
+  });
+  // If this is a file, 'data' is the file object with 'sha'
+  if (Array.isArray(data)) throw new Error(`${path} is a directory`);
+  return data.sha;
+}
+
+async function readFile(path) {
+  const { data } = await octokit.repos.getContent({
+    owner: TEXTS_OWNER,
+    repo: TEXTS_REPO,
+    path,
+    ref: TEXTS_BRANCH,
+  });
+  if (Array.isArray(data)) throw new Error(`${path} is a directory`);
+  const buff = Buffer.from(data.content, data.encoding || "base64");
+  return { sha: data.sha, text: buff.toString("utf8") };
+}
+
+async function writeFile(path, content, sha) {
+  await octokit.repos.createOrUpdateFileContents({
+    owner: TEXTS_OWNER,
+    repo: TEXTS_REPO,
+    path,
+    message: `sync(catalogs): absolutize url_txt in ${path}`,
+    content: Buffer.from(content, "utf8").toString("base64"),
+    sha,
+    branch: TEXTS_BRANCH,
+  });
+}
+
+async function run() {
+  for (const path of CATALOG_PATHS) {
+    console.log(`Processing ${path} ...`);
+    const { sha, text } = await readFile(path);
+    const { changed, text: next } = transformCatalog(text, path);
+    if (changed) {
+      await writeFile(path, next, sha);
+      console.log(`✔ Updated ${path}`);
     } else {
-      console.log('No changes needed.');
+      console.log(`= No changes in ${path}`);
     }
   }
+  console.log("All done.");
+}
 
-  console.log(`\nDone. Total entries updated: ${totalChanged}`);
-})().catch(err => {
+run().catch((err) => {
   console.error(err);
   process.exit(1);
 });
