@@ -1,148 +1,164 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Law Index — Link Checker</title>
-  <link rel="icon" href="./logo.png" />
-  <style>
-    :root{
-      --bg:#0f172a; --panel:#111827; --muted:#9ca3af; --ok:#16a34a; --err:#ef4444; --ink:#e5e7eb; --brand:#0ea5e9;
-      --row:#0b132e; --row2:#0d1b2a;
-    }
-    html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
-    header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:#0b1220;border-bottom:1px solid #0f2038;position:sticky;top:0}
-    header img{height:24px;width:24px;border-radius:4px;background:#fff}
-    header h1{margin:0;font-size:16px;font-weight:600}
-    main{max-width:1100px;margin:24px auto;padding:0 16px}
-    .card{background:var(--panel);border:1px solid #1f2937;border-radius:10px;padding:16px}
-    .inputs{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0 12px}
-    .inputs input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #263243;background:#0b1320;color:var(--ink)}
-    .actions{display:flex;gap:10px;align-items:center}
-    button{background:var(--brand);color:#00131e;border:0;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
-    button:hover{filter:brightness(1.05)}
-    small{color:var(--muted)}
-    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:14px}
-    th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #1f2937;vertical-align:top}
-    th{position:sticky;top:64px;background:#0b1220;border-bottom:1px solid #1f2937;z-index:1}
-    tr:nth-child(even){background:rgba(255,255,255,0.01)}
-    .pill{display:inline-block;font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid #273247;color:#93c5fd;background:#0b1a2d}
-    .ok{color:var(--ok)}
-    .err{color:var(--err)}
-    a{color:#93c5fd;text-decoration:none}
-    a:hover{text-decoration:underline}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Law Index — Link Checker</title>
+<style>
+  :root { --bg:#0b1020; --panel:#121733; --text:#f3f5ff; --muted:#a9b2d4; --ok:#38c172; --bad:#ff6b6b; --warn:#ffd166; --link:#8ab4ff; }
+  html,body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0}
+  header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:var(--panel);position:sticky;top:0;z-index:2}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  main{padding:18px}
+  .row{display:grid;grid-template-columns:140px 1fr;gap:.5rem;margin:.25rem 0}
+  input[type="url"]{width:100%;padding:8px 10px;border-radius:8px;border:1px solid #293062;background:#0f1530;color:var(--text)}
+  button{background:#2b62ff;border:0;color:#fff;padding:9px 14px;border-radius:8px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  table{width:100%;border-collapse:collapse;margin-top:14px}
+  th,td{border-bottom:1px solid #263057;padding:10px 8px;vertical-align:top}
+  th{color:#c6cff7;text-align:left;font-weight:600}
+  a{color:var(--link);text-decoration:none}
+  .status{font-weight:700}
+  .ok{color:var(--ok)}
+  .bad{color:var(--bad)}
+  .note{color:var(--muted);font-size:12px;margin:8px 0 2px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#1b2244;color:#c6cff7;font-size:12px;margin-right:8px}
+</style>
 </head>
 <body>
 <header>
-  <img src="./logo.png" alt="">
   <h1>Law Index — Link Checker</h1>
 </header>
+
 <main>
-  <div class="card">
-    <p>Checks every <span class="mono">url_txt</span> in the catalogs and issues a small ranged request (≈1KB) to avoid full downloads. You can override catalogs below.</p>
-    <div class="inputs">
-      <input id="uTextbooks" placeholder="Textbooks catalog URL"
-             value="https://texts.wwwbcb.org/texts/catalog.json">
-      <input id="uLaws" placeholder="Laws catalog URL"
-             value="https://texts.wwwbcb.org/laws.json">
-      <input id="uRules" placeholder="Rules catalog URL"
-             value="https://texts.wwwbcb.org/rules.json">
-    </div>
-    <div class="actions">
-      <button id="run">Run checks</button>
-      <small id="summary">Ready.</small>
-    </div>
-    <table id="tbl">
-      <thead>
-        <tr>
-          <th style="width:120px">Source</th>
-          <th>Title</th>
-          <th>URL</th>
-          <th style="width:70px">HTTP</th>
-          <th style="width:80px">Time</th>
-          <th style="width:80px">Size</th>
-          <th style="width:90px">Status</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+  <p class="note">
+    Checks every <code>url_txt</code> in the catalogs and issues a tiny ranged request (1KB) so we don’t pull full files.
+    Relative paths are resolved <strong>against the catalog’s URL</strong> (not this page).
+  </p>
+
+  <div class="row"><label>Textbooks</label>
+    <input id="uTextbooks" type="url" placeholder="https://texts.wwwbcb.org/texts/catalog.json"
+           value="https://texts.wwwbcb.org/texts/catalog.json">
   </div>
+  <div class="row"><label>Laws</label>
+    <input id="uLaws" type="url" placeholder="https://texts.wwwbcb.org/laws.json"
+           value="https://texts.wwwbcb.org/laws.json">
+  </div>
+  <div class="row"><label>Rules</label>
+    <input id="uRules" type="url" placeholder="https://texts.wwwbcb.org/rules.json"
+           value="https://texts.wwwbcb.org/rules.json">
+  </div>
+
+  <div style="margin:10px 0 18px;">
+    <button id="run">Run checks</button>
+    <span id="summary" class="note"></span>
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th style="width:120px;">Source</th>
+        <th>Title</th>
+        <th>URL</th>
+        <th style="width:70px;">HTTP</th>
+        <th style="width:80px;">Time</th>
+        <th style="width:80px;">Size</th>
+        <th style="width:110px;">Status</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 </main>
 
 <script>
-const $ = sel => document.querySelector(sel);
+/** Small helpers */
+const $ = s => document.querySelector(s);
 const tbody = $('#tbl tbody');
 const summary = $('#summary');
+const runBtn = $('#run');
 
-function resolveUrl(urlTxt, catalogUrl){
-  // Resolve relative against the catalog’s own URL
-  return new URL(urlTxt, catalogUrl).href;
-}
-
-async function fetchJSON(url){
-  const r = await fetch(url, {cache:'no-store'});
-  if(!r.ok) throw new Error(`Fetch ${url} → ${r.status}`);
+/** Fetch a JSON catalog safely */
+async function fetchJSON(url) {
+  const r = await fetch(url, { headers: { 'Accept': 'application/json' }});
+  if (!r.ok) throw new Error(`Fetch failed ${r.status} for ${url}`);
   return await r.json();
 }
 
-function row(vals){
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>${vals.source}</td>
-    <td>${vals.title || ''}</td>
-    <td class="mono"><a href="${vals.url}" target="_blank" rel="noopener">${vals.url.replace(/^https?:\/\//,'')}</a></td>
-    <td class="mono">${vals.http ?? ''}</td>
-    <td class="mono">${vals.time ?? ''} ms</td>
-    <td class="mono">${vals.size ?? ''}</td>
-    <td>${vals.ok ? `<span class="ok">OK</span>` : `<span class="err">Not found</span>`}</td>
-  `;
-  tbody.appendChild(tr);
+/** Resolve each url_txt against the catalog origin, never this page */
+function absolutize(urlTxt, catalogURL) {
+  try { return new URL(urlTxt, catalogURL).toString(); }
+  catch { return urlTxt; }
 }
 
-async function head(url){
+/** Do a light check (GET with Range) so we don’t download whole files */
+async function headLite(url) {
   const t0 = performance.now();
-  // Use a tiny ranged GET — many hosts don’t allow HEAD + Range reliably
-  const r = await fetch(url, {headers:{'Range':'bytes=0-1023'}});
-  const t = Math.round(performance.now() - t0);
-  const size = r.headers.get('content-length') || '';
-  return { ok:r.ok, status:r.status, time:t, size };
-}
-
-async function checkCatalog(label, catalogUrl){
-  const list = await fetchJSON(catalogUrl);
-  for(const item of list){
-    const full = resolveUrl(item.url_txt, catalogUrl);
-    try{
-      const h = await head(full);
-      row({ source:label, title:item.title, url:full, http:h.status, time:h.time, size:h.size, ok:h.ok });
-    }catch(e){
-      row({ source:label, title:item.title, url:full, http:'—', time:'—', size:'—', ok:false });
-    }
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1023' }});
+    const t1 = performance.now();
+    const len = r.headers.get('content-length') || r.headers.get('x-file-size') || '';
+    return { ok: r.ok || r.status === 206, status: r.status, ms: Math.round(t1 - t0), size: len };
+  } catch (e) {
+    return { ok: false, status: '—', ms: Math.round(performance.now() - t0), size: '' };
   }
 }
 
-$('#run').addEventListener('click', async ()=>{
+/** Render one row */
+function row({source, title, href, status, ms, size}) {
+  const tr = document.createElement('tr');
+  const td = (h) => { const d=document.createElement('td'); d.innerHTML=h; return d; };
+  tr.append(
+    td(source),
+    td(title || '—'),
+    td(`<a href="${href}" target="_blank" rel="noopener">${href.replace(/^https?:\/\/[^/]+/,'')}</a>`),
+    td(String(status)),
+    td(`${ms} ms`),
+    td(size ? `${size} B` : '—'),
+    td(`<span class="status ${ (status===200||status===206)?'ok':'bad' }">${ (status===200||status===206)?'OK':'Not found' }</span>`)
+  );
+  tbody.append(tr);
+}
+
+/** Main run */
+async function run() {
   tbody.innerHTML = '';
-  summary.textContent = 'Running…';
-  const urls = [ ['Textbooks', $('#uTextbooks').value.trim()],
-                 ['Laws',      $('#uLaws').value.trim()],
-                 ['Rules',     $('#uRules').value.trim()] ];
-  let ok=0, bad=0;
-  for(const [label, url] of urls){
-    try{
-      await checkCatalog(label, url);
-    }catch(e){
-      row({source:label, title:'(catalog fetch failed)', url:url, ok:false});
+  summary.textContent = '';
+  runBtn.disabled = true;
+
+  const cats = [
+    { label: 'Textbooks', url: $('#uTextbooks').value },
+    { label: 'Laws',      url: $('#uLaws').value },
+    { label: 'Rules',     url: $('#uRules').value },
+  ];
+
+  let total = 0, errors = 0;
+
+  for (const cat of cats) {
+    if (!cat.url) continue;
+    let data;
+    try { data = await fetchJSON(cat.url); }
+    catch (e) {
+      row({ source: cat.label, title: `<span class="pill">catalog</span> ${cat.url}`, href: cat.url, status: 'ERR', ms: 0, size: '' });
+      errors++;
+      continue;
+    }
+
+    // normalise expected shapes
+    const items = Array.isArray(data) ? data : (data.items || data.textbooks || data.entries || []);
+    for (const it of items) {
+      const title = it.title || it.name || it.id || '';
+      const href  = absolutize(it.url_txt || it.url || it.href, cat.url);
+      const res   = await headLite(href);
+      row({ source: cat.label, title, href, status: res.status, ms: res.ms, size: res.size });
+      total++; if (!res.ok) errors++;
     }
   }
-  // Tally
-  [...tbody.querySelectorAll('tr')].forEach(tr=>{
-    if(tr.querySelector('.ok')) ok++; else bad++;
-  });
-  summary.textContent = `Done — OK: ${ok} · Errors: ${bad}`;
-});
+
+  summary.textContent = `Done — OK: ${total - errors} · Errors: ${errors}`;
+  runBtn.disabled = false;
+}
+
+runBtn.addEventListener('click', run);
 </script>
 </body>
 </html>
