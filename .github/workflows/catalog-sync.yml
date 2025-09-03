@@ -1,11 +1,34 @@
 name: catalog-sync
 
 on:
-  workflow_dispatch:
+  # Manual run button + hourly safety pass
+  workflow_dispatch: {}
+  schedule:
+    - cron: "23 * * * *"
+
+# Needed so we can commit catalog changes back to Law-Texts-ui
+permissions:
+  contents: write
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      # Use GH_TOKEN if present; otherwise fall back to your existing TEXTS_RW_TOKEN
+      GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.TEXTS_RW_TOKEN }}
+      OWNER: "Info1691"
+      # Repos to scan for .txt sources
+      REPOS: '["Law-Texts-ui","laws-ui","rules-ui"]'
+      # Catalog files to rewrite in Law-Texts-ui
+      CATALOGS: '["texts/catalog.json","laws.json","rules.json"]'
+      # Public bases per repo (used to build absolute URLs in catalogs)
+      PUBLIC_BASE_LAW_TEXTS: "https://texts.wwwbcb.org"
+      PUBLIC_BASE_LAWS: "https://info1691.github.io/laws-ui"
+      PUBLIC_BASE_RULES: "https://info1691.github.io/rules-ui"
+      # Branch names
+      BRANCH_TEXTS: "main"
+      BRANCH_LAWS: "main"
+      BRANCH_RULES: "main"
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
@@ -13,17 +36,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      # Use install (not ci) — no lockfile needed
-      - name: Install deps
-        run: npm install --no-audit --no-fund
+          node-version: "20"
 
       - name: Sync catalogs (update url_txt automatically)
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}   # Personal Access Token with repo scope
-          TEXTS_OWNER: Info1691
-          TEXTS_REPO: Law-Texts-ui
-          TEXTS_BRANCH: main
-          TEXTS_BASE: https://texts.wwwbcb.org
         run: node scripts/catalog-sync.mjs
