@@ -26,7 +26,10 @@
   },
 
   {
-    "s": {"owner":"info1691","repo":"lex-ingest-local","ref":"main","path":"law-index/texts/jersey/litigating-trust-disputes-in-jersey.txt"},
-    "d": {"owner":"info1691","repo":"Law-Texts-ui","ref":"main","path":"data/textbooks/jersey/litigating-trust-disputes-in-jersey.txt"}
+    "s": { "owner": "info1691", "repo": "lex-ingest-local", "ref": "main",
+           "path": "law-index/texts/jersey/litigating-trust-disputes-in-jersey.txt" },
+    "d": { "owner": "info1691", "repo": "Law-Texts-ui", "ref": "main",
+           "path": "data/textbooks/jersey/litigating-trust-disputes-in-jersey.txt" },
+    "message": "Relocate: Litigating Trust Disputes in Jersey"
   }
 ]
