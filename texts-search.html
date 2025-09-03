@@ -16,6 +16,8 @@
   label{font-size:13px;opacity:.85}
   .bar{display:flex;gap:10px;align-items:center;margin-left:6px}
   main{max-width:1100px;margin:24px auto;padding:0 16px}
+  h2{font-size:18px;margin:22px 0 8px;color:#bcd3ff}
+  .count{font-size:13px;opacity:.75;margin-left:.4rem}
   .doc{border:1px solid #1e2a43;border-radius:12px;margin:14px 0;background:#0f1a30}
   .doc header{padding:10px 12px;background:#0d172b;border-bottom:1px solid #1e2a43}
   .doc header a{color:#9fb7ff;text-decoration:none}
@@ -23,6 +25,7 @@
   mark{background:#ffe08a;color:#161b22;border-radius:4px;padding:0 2px}
   .meta{opacity:.7;font-size:12px;margin-left:6px}
   .muted{opacity:.75}
+  .warn{background:#3d1f1f;color:#ffd3d3;border:1px solid #6b2a2a;border-radius:8px;padding:6px 10px;margin:8px 12px}
 </style>
 </head>
 <body>
@@ -38,175 +41,122 @@
 </header>
 <main>
   <div id="note" class="muted" style="margin-bottom:8px">
-    Searches TXT via catalogs on <code>texts.wwwbcb.org</code>. Relative <code>url_txt</code> entries are resolved against their catalog URL.
+    Searches TXT via catalogs on <code>texts.wwwbcb.org</code>. Relative <code>url_txt</code> are resolved against their catalog URL. Search is case-insensitive. AND by default; toggle OR to widen.
   </div>
-  <div id="out"></div>
+
+  <div id="summary" class="muted"></div>
+
+  <h2>Textbooks <span id="c-books" class="count"></span></h2>
+  <div id="books"></div>
+
+  <h2>Laws <span id="c-laws" class="count"></span></h2>
+  <div id="laws"></div>
+
+  <h2>Rules <span id="c-rules" class="count"></span></h2>
+  <div id="rules"></div>
 </main>
 
 <script>
-/* ---------- catalog config ---------- */
+/* catalogs */
 const CATALOGS = {
   textbooks: 'https://texts.wwwbcb.org/texts/catalog.json',
   laws:      'https://texts.wwwbcb.org/laws.json',
   rules:     'https://texts.wwwbcb.org/rules.json'
 };
 
-/* ---------- tiny helpers ---------- */
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* helpers */
 const escapeHtml = s => s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const norm = s => s.normalize('NFKD').toLowerCase();
+function parseQuery(q){const phrases=[],terms=[];q=q.trim();if(!q)return{phrases,terms};const rx=/"([^"]+)"|(\S+)/g;let m;while((m=rx.exec(q))){if(m[1])phrases.push(norm(m[1]));else terms.push(norm(m[2]));}return{phrases,terms}}
+function makeMatcher(q,orMode){const {phrases,terms}=parseQuery(q);return hayRaw=>{const hay=norm(hayRaw);const ph=phrases.map(p=>hay.indexOf(p)!==-1);const tm=terms.map(t=>hay.indexOf(t)!==-1);const all=[...ph,...tm];if(!all.length)return false;return orMode?all.some(Boolean):all.every(Boolean)}}
+function makeSnippets(hayRaw,q,maxSnips,win){const hay=norm(hayRaw);const {phrases,terms}=parseQuery(q);const needles=[...phrases,...terms].filter(Boolean);const idxs=new Set();for(const n of needles){let i=hay.indexOf(n);while(i!==-1){idxs.add(i);i=hay.indexOf(n,i+1)}}const points=Array.from(idxs).sort((a,b)=>a-b).slice(0,64);const snips=[];for(const i of points){const s=Math.max(0,i-Math.floor(win/2));const e=Math.min(hayRaw.length,i+Math.floor(win/2));snips.push(hayRaw.slice(s,e));if(snips.length>=maxSnips)break;}const hi=s=>{let out=escapeHtml(s);for(const n of needles){if(!n)continue;const rx=new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig');out=out.replace(rx,m=>`<mark>${escapeHtml(m)}</mark>`);}return out};return snips.map(hi)}
+function resolveUrl(base,rel){try{return new URL(rel,base).toString()}catch{return rel}}
+function likelyBadEncoding(text){const bad=(text.match(/\uFFFD/g)||[]).length;return bad>50 || bad>0 && bad/text.length>0.002}
 
-/* parse query into {phrases:[], terms:[]} :
-   quoted parts are phrases, rest split on spaces */
-function parseQuery(q) {
-  const phrases = [];
-  const terms = [];
-  q = q.trim();
-  if (!q) return {phrases, terms};
-  const rx = /"([^"]+)"|(\S+)/g;
-  let m;
-  while ((m = rx.exec(q))) {
-    if (m[1]) phrases.push(norm(m[1]));
-    else terms.push(norm(m[2]));
-  }
-  return {phrases, terms};
-}
-
-/* match function: case-insensitive; AND by default; OR if toggled */
-function makeMatcher(q, orMode) {
-  const {phrases, terms} = parseQuery(q);
-  return function(hayRaw) {
-    const hay = norm(hayRaw);
-    const phraseHits = phrases.map(p => hay.indexOf(p) !== -1);
-    const termHits   = terms.map(t => hay.indexOf(t) !== -1);
-    const all = [...phraseHits, ...termHits];
-    if (!all.length) return false;
-    return orMode ? all.some(Boolean) : all.every(Boolean);
-  };
-}
-
-/* build snippets around term/phrase hits (first N) */
-function makeSnippets(hayRaw, q, maxSnips, win) {
-  const hay = norm(hayRaw);
-  const {phrases, terms} = parseQuery(q);
-  const needles = [...phrases, ...terms].filter(Boolean);
-  const idxs = new Set();
-  for (const n of needles) {
-    let i = hay.indexOf(n);
-    while (i !== -1) { idxs.add(i); i = hay.indexOf(n, i+1); }
-  }
-  const points = Array.from(idxs).sort((a,b)=>a-b).slice(0, 64);
-  const snips = [];
-  for (const i of points) {
-    const start = Math.max(0, i - Math.floor(win/2));
-    const end   = Math.min(hayRaw.length, i + Math.floor(win/2));
-    snips.push(hayRaw.slice(start, end));
-    if (snips.length >= maxSnips) break;
-  }
-  // highlight: wrap original-case substring by re-finding each needle within each snippet
-  const hi = s => {
-    let out = escapeHtml(s);
-    for (const n of needles) {
-      if (!n) continue;
-      const rx = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
-      out = out.replace(rx, m => `<mark>${escapeHtml(m)}</mark>`);
-    }
-    return out;
-  };
-  return snips.map(hi);
-}
-
-/* fetch helper that resolves relative urls against catalog URL */
-function resolveUrl(catalogUrl, entryUrl) {
-  try { return new URL(entryUrl, catalogUrl).toString(); }
-  catch { return entryUrl; }
-}
-
-/* ---------- main search ---------- */
-async function runSearch() {
-  const q = document.getElementById('q').value;
-  const win = Math.max(80, +document.getElementById('win').value || 240);
-  const snMax = Math.max(1, +document.getElementById('snips').value || 6);
-  const orMode = document.getElementById('orMode').checked;
-
-  const out = document.getElementById('out');
-  out.innerHTML = '<div class="muted">Searching catalogs…</div>';
-
-  // Load all catalogs
-  const allEntries = [];
-  for (const [kind, url] of Object.entries(CATALOGS)) {
-    try {
-      const res = await fetch(url, {cache:'no-store'});
-      const json = await res.json();
-      const arr = Array.isArray(json) ? json : (json.items || json.textbooks || []);
-      for (const it of arr) {
-        if (!it.url_txt) continue;
-        allEntries.push({ kind, catalogUrl: url, title: it.title || it.name || it.url_txt, url_txt: it.url_txt });
-      }
-    } catch (e) {
-      console.warn('Catalog load failed:', kind, url, e);
-    }
-  }
-
-  if (!allEntries.length) {
-    out.innerHTML = '<div class="muted">No catalogs or entries loaded.</div>';
-    return;
-  }
-
-  const matcher = makeMatcher(q, orMode);
-  const results = [];
-
-  // Stream through entries (sequential to stay under browser+GitHub limits)
-  for (const e of allEntries) {
-    const txtUrl = resolveUrl(e.catalogUrl, e.url_txt);
-    try {
-      const res = await fetch(txtUrl, {cache:'no-store'});
-      if (!res.ok) continue;
-      const text = await res.text();
-      if (!text) continue;
-      if (matcher(text)) {
-        const snips = makeSnippets(text, q, snMax, win);
-        results.push({ ...e, href: txtUrl, snippets: snips });
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // Render
-  if (!results.length) {
-    out.innerHTML = '<div class="muted">No matches.</div>';
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
-  results.forEach(r => {
-    const box = document.createElement('div');
-    box.className = 'doc';
-    box.innerHTML = `
+/* renderers */
+function renderGroup(targetElem, items){
+  if(!items.length){targetElem.innerHTML='<div class="muted">No matches in this category.</div>';return}
+  const frag=document.createDocumentFragment();
+  for(const r of items){
+    const box=document.createElement('div');
+    box.className='doc';
+    const warn= r.flags?.bad ? `<div class="warn">This TXT looks un-normalized (encoding artifacts detected). Consider re-ingesting or running the normalizer.</div>` : '';
+    box.innerHTML=`
       <header>
         <a href="${r.href}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
         <span class="meta">• ${escapeHtml(r.kind)}</span>
       </header>
-      ${r.snippets.map(s => `<div class="snip">${s}</div>`).join('')}
+      ${warn}
+      ${r.snippets.map(s=>`<div class="snip">${s}</div>`).join('')}
     `;
     frag.appendChild(box);
-  });
-  out.innerHTML = '';
-  out.appendChild(frag);
+  }
+  targetElem.innerHTML=''; targetElem.appendChild(frag);
+}
+
+/* main */
+async function runSearch(){
+  const q=document.getElementById('q').value;
+  const win=Math.max(80,+document.getElementById('win').value||240);
+  const snMax=Math.max(1,+document.getElementById('snips').value||6);
+  const orMode=document.getElementById('orMode').checked;
+  document.getElementById('summary').textContent='Loading catalogs…';
+
+  // load catalogs
+  const entries=[];
+  for(const [kind,url] of Object.entries(CATALOGS)){
+    try{
+      const res=await fetch(url,{cache:'no-store'});
+      const json=await res.json();
+      const arr=Array.isArray(json)?json:(json.items||json.textbooks||[]);
+      for(const it of arr){
+        if(!it.url_txt) continue;
+        entries.push({kind,catalogUrl:url,title:it.title||it.name||it.url_txt,url_txt:it.url_txt});
+      }
+    }catch(e){ console.warn('Catalog load failed:',kind,url,e); }
+  }
+  if(!entries.length){ document.getElementById('summary').textContent='No catalogs or entries loaded.'; return; }
+
+  const matcher=makeMatcher(q,orMode);
+  const groups={textbooks:[],laws:[],rules:[]};
+  let checked=0, matched=0;
+
+  // sequential fetch to stay within rate limits
+  for(const e of entries){
+    const txtUrl=resolveUrl(e.catalogUrl,e.url_txt);
+    try{
+      const res=await fetch(txtUrl,{cache:'no-store'}); if(!res.ok) continue;
+      const text=await res.text(); checked++;
+      if(!text) continue;
+      if(matcher(text)){
+        matched++;
+        const item={
+          ...e,
+          href:txtUrl,
+          snippets:makeSnippets(text,q,snMax,win),
+          flags:{bad:likelyBadEncoding(text)}
+        };
+        groups[e.kind].push(item);
+      }
+    }catch{ /* ignore individual fetch errors */ }
+  }
+
+  document.getElementById('summary').textContent=`Checked ${checked} document(s). Matches — Textbooks: ${groups.textbooks.length} • Laws: ${groups.laws.length} • Rules: ${groups.rules.length}`;
+
+  document.getElementById('c-books').textContent=`(${groups.textbooks.length})`;
+  document.getElementById('c-laws').textContent =`(${groups.laws.length})`;
+  document.getElementById('c-rules').textContent=`(${groups.rules.length})`;
+
+  renderGroup(document.getElementById('books'), groups.textbooks);
+  renderGroup(document.getElementById('laws'),  groups.laws);
+  renderGroup(document.getElementById('rules'), groups.rules);
 }
 
 /* wire up */
 document.getElementById('go').addEventListener('click', runSearch);
-document.getElementById('q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runSearch(); });
-
-// optional: load query from ?q= and run
-const params = new URLSearchParams(location.search);
-if (params.get('q')) {
-  document.getElementById('q').value = params.get('q');
-  if (params.get('or') === '1') document.getElementById('orMode').checked = true;
-  runSearch();
-}
+document.getElementById('q').addEventListener('keydown', e=>{ if(e.key==='Enter') runSearch() });
+const params=new URLSearchParams(location.search);
+if(params.get('q')){ document.getElementById('q').value=params.get('q'); if(params.get('or')==='1')document.getElementById('orMode').checked=true; runSearch(); }
 </script>
 </body>
 </html>
