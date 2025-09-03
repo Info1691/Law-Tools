@@ -2,11 +2,6 @@ name: catalog-sync
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 * * *" # daily 03:17 UTC (optional)
-
-permissions:
-  contents: write
 
 jobs:
   run:
@@ -18,12 +13,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
+      # Use install (not ci) — no lockfile needed
       - name: Install deps
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Sync catalogs (update url_txt automatically)
         env:
-          GH_TOKEN: ${{ secrets.LAW_SYNC_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}   # Personal Access Token with repo scope
+          TEXTS_OWNER: Info1691
+          TEXTS_REPO: Law-Texts-ui
+          TEXTS_BRANCH: main
+          TEXTS_BASE: https://texts.wwwbcb.org
         run: node scripts/catalog-sync.mjs
