@@ -2,8 +2,12 @@
   "name": "law-tools",
   "private": true,
   "type": "module",
-  "scripts": {},
+  "version": "1.0.0",
+  "description": "Tools for Law-Texts and Law-Index maintenance",
+  "scripts": {
+    "catalog-sync": "node scripts/catalog-sync.mjs"
+  },
   "dependencies": {
-    "@octokit/rest": "^20.0.2"
+    "@octokit/rest": "^20.1.1"
   }
 }
