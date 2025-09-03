@@ -5,103 +5,208 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Texts Search Tool</title>
 <style>
-  :root { --bg:#0b1020; --panel:#121733; --text:#f3f5ff; --muted:#a9b2d4; --link:#8ab4ff; --hit:#fff176; }
-  html,body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0}
-  header{display:flex;gap:.75rem;align-items:center;padding:14px 16px;background:var(--panel)}
-  header h1{font-size:16px;margin:0;font-weight:600}
-  main{padding:18px}
-  .bar{display:flex;gap:.5rem;align-items:center;margin-bottom:12px}
-  .bar input{flex:1;padding:9px 12px;border-radius:8px;border:1px solid #293062;background:#0f1530;color:var(--text)}
-  button{background:#2b62ff;border:0;color:#fff;padding:9px 14px;border-radius:8px;font-weight:600;cursor:pointer}
-  .section{margin-top:18px}
-  .card{background:#0f1530;border:1px solid #263057;border-radius:10px;padding:12px 14px;margin:10px 0}
-  .card h3{margin:0 0 6px 0;font-size:15px}
-  .muted{color:var(--muted)}
-  a{color:var(--link);text-decoration:none}
-  mark{background:var(--hit);color:#000;padding:0 .1em;border-radius:3px}
+  :root{color-scheme:dark light}
+  body{margin:0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b1322;color:#e7edf6}
+  header{display:flex;gap:.5rem;align-items:center;padding:14px 16px;border-bottom:1px solid #1e2a43;position:sticky;top:0;background:#0b1322}
+  h1{font-size:16px;margin:0 8px 0 0;color:#9fb7ff}
+  input[type="text"]{flex:1;min-width:160px;background:#0f1a30;border:1px solid #233153;border-radius:10px;padding:10px 12px;color:#e7edf6;outline:none}
+  input[type="text"]:focus{border-color:#3d60ff;box-shadow:0 0 0 2px rgba(61,96,255,.25)}
+  .btn{background:#3d60ff;border:0;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  label{font-size:13px;opacity:.85}
+  .bar{display:flex;gap:10px;align-items:center;margin-left:6px}
+  main{max-width:1100px;margin:24px auto;padding:0 16px}
+  .doc{border:1px solid #1e2a43;border-radius:12px;margin:14px 0;background:#0f1a30}
+  .doc header{padding:10px 12px;background:#0d172b;border-bottom:1px solid #1e2a43}
+  .doc header a{color:#9fb7ff;text-decoration:none}
+  .snip{padding:10px 12px;border-top:1px solid #1e2a43;white-space:pre-wrap}
+  mark{background:#ffe08a;color:#161b22;border-radius:4px;padding:0 2px}
+  .meta{opacity:.7;font-size:12px;margin-left:6px}
+  .muted{opacity:.75}
 </style>
 </head>
 <body>
-<header><h1>Texts Search Tool</h1></header>
-<main>
+<header>
+  <h1>Texts Search Tool</h1>
+  <input id="q" type="text" placeholder='e.g., "beddoe consent" litigation' />
+  <button id="go" class="btn">Search</button>
   <div class="bar">
-    <input id="q" placeholder="e.g., beddoe consent litigation; use quotes for phrases" />
-    <button id="go">Search</button>
+    <label><input id="orMode" type="checkbox"> OR mode</label>
+    <label>Window: <input id="win" type="number" value="240" style="width:72px;background:#0f1a30;color:#e7edf6;border:1px solid #233153;border-radius:8px;padding:6px 8px"></label>
+    <label>Snippets/doc: <input id="snips" type="number" value="6" style="width:60px;background:#0f1a30;color:#e7edf6;border:1px solid #233153;border-radius:8px;padding:6px 8px"></label>
   </div>
-  <div class="muted" style="margin-bottom:10px;">
+</header>
+<main>
+  <div id="note" class="muted" style="margin-bottom:8px">
     Searches TXT via catalogs on <code>texts.wwwbcb.org</code>. Relative <code>url_txt</code> entries are resolved against their catalog URL.
   </div>
-
   <div id="out"></div>
 </main>
 
 <script>
-const $ = s => document.querySelector(s);
-const out = $('#out');
-
+/* ---------- catalog config ---------- */
 const CATALOGS = {
   textbooks: 'https://texts.wwwbcb.org/texts/catalog.json',
   laws:      'https://texts.wwwbcb.org/laws.json',
   rules:     'https://texts.wwwbcb.org/rules.json'
 };
 
-async function fetchJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(url+': '+r.status); return await r.json(); }
-const abs = (u, base) => new URL(u, base).toString();
+/* ---------- tiny helpers ---------- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const escapeHtml = s => s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const norm = s => s.normalize('NFKD').toLowerCase();
 
-function snippet(text, q, window=240){
-  const i = text.toLowerCase().indexOf(q.toLowerCase());
-  if (i < 0) return null;
-  const s = Math.max(0, i - Math.floor(window/2));
-  const e = Math.min(text.length, s + window);
-  let t = text.slice(s, e).replace(/\s+/g, ' ');
-  const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig');
-  t = t.replace(rx, m => `<mark>${m}</mark>`);
-  return (s>0?'…':'') + t + (e<text.length?'…':'');
-}
-
-async function searchOne(name, catURL, q){
-  let items = await fetchJSON(catURL);
-  items = Array.isArray(items) ? items : (items.items || items.textbooks || items.entries || []);
-  const results = [];
-  for (const it of items){
-    const title = it.title || it.name || it.id || '(untitled)';
-    const url   = abs(it.url_txt, catURL);
-    try{
-      const r = await fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-32767' }});
-      if (!r.ok && r.status !== 206) continue;
-      const txt = await r.text();
-      const sn = snippet(txt, q);
-      if (sn) results.push({title, url, sn});
-    }catch(_){}
+/* parse query into {phrases:[], terms:[]} :
+   quoted parts are phrases, rest split on spaces */
+function parseQuery(q) {
+  const phrases = [];
+  const terms = [];
+  q = q.trim();
+  if (!q) return {phrases, terms};
+  const rx = /"([^"]+)"|(\S+)/g;
+  let m;
+  while ((m = rx.exec(q))) {
+    if (m[1]) phrases.push(norm(m[1]));
+    else terms.push(norm(m[2]));
   }
-  if (!results.length) return '';
-  return `
-    <div class="section">
-      <h2>${name[0].toUpperCase()+name.slice(1)}</h2>
-      ${results.map(r => `
-        <div class="card">
-          <h3><a href="${r.url}" target="_blank" rel="noopener">${r.title}</a></h3>
-          <div class="muted">${r.sn}</div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  return {phrases, terms};
 }
 
-async function run(){
-  const q = $('#q').value.trim();
-  if (!q) return;
-  out.innerHTML = `<div class="muted">Searching…</div>`;
-  const parts = await Promise.all([
-    searchOne('textbooks', CATALOGS.textbooks, q),
-    searchOne('laws',      CATALOGS.laws,      q),
-    searchOne('rules',     CATALOGS.rules,     q),
-  ]);
-  out.innerHTML = parts.join('') || `<div class="muted">No matches.</div>`;
+/* match function: case-insensitive; AND by default; OR if toggled */
+function makeMatcher(q, orMode) {
+  const {phrases, terms} = parseQuery(q);
+  return function(hayRaw) {
+    const hay = norm(hayRaw);
+    const phraseHits = phrases.map(p => hay.indexOf(p) !== -1);
+    const termHits   = terms.map(t => hay.indexOf(t) !== -1);
+    const all = [...phraseHits, ...termHits];
+    if (!all.length) return false;
+    return orMode ? all.some(Boolean) : all.every(Boolean);
+  };
 }
 
-$('#go').addEventListener('click', run);
-$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+/* build snippets around term/phrase hits (first N) */
+function makeSnippets(hayRaw, q, maxSnips, win) {
+  const hay = norm(hayRaw);
+  const {phrases, terms} = parseQuery(q);
+  const needles = [...phrases, ...terms].filter(Boolean);
+  const idxs = new Set();
+  for (const n of needles) {
+    let i = hay.indexOf(n);
+    while (i !== -1) { idxs.add(i); i = hay.indexOf(n, i+1); }
+  }
+  const points = Array.from(idxs).sort((a,b)=>a-b).slice(0, 64);
+  const snips = [];
+  for (const i of points) {
+    const start = Math.max(0, i - Math.floor(win/2));
+    const end   = Math.min(hayRaw.length, i + Math.floor(win/2));
+    snips.push(hayRaw.slice(start, end));
+    if (snips.length >= maxSnips) break;
+  }
+  // highlight: wrap original-case substring by re-finding each needle within each snippet
+  const hi = s => {
+    let out = escapeHtml(s);
+    for (const n of needles) {
+      if (!n) continue;
+      const rx = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
+      out = out.replace(rx, m => `<mark>${escapeHtml(m)}</mark>`);
+    }
+    return out;
+  };
+  return snips.map(hi);
+}
+
+/* fetch helper that resolves relative urls against catalog URL */
+function resolveUrl(catalogUrl, entryUrl) {
+  try { return new URL(entryUrl, catalogUrl).toString(); }
+  catch { return entryUrl; }
+}
+
+/* ---------- main search ---------- */
+async function runSearch() {
+  const q = document.getElementById('q').value;
+  const win = Math.max(80, +document.getElementById('win').value || 240);
+  const snMax = Math.max(1, +document.getElementById('snips').value || 6);
+  const orMode = document.getElementById('orMode').checked;
+
+  const out = document.getElementById('out');
+  out.innerHTML = '<div class="muted">Searching catalogs…</div>';
+
+  // Load all catalogs
+  const allEntries = [];
+  for (const [kind, url] of Object.entries(CATALOGS)) {
+    try {
+      const res = await fetch(url, {cache:'no-store'});
+      const json = await res.json();
+      const arr = Array.isArray(json) ? json : (json.items || json.textbooks || []);
+      for (const it of arr) {
+        if (!it.url_txt) continue;
+        allEntries.push({ kind, catalogUrl: url, title: it.title || it.name || it.url_txt, url_txt: it.url_txt });
+      }
+    } catch (e) {
+      console.warn('Catalog load failed:', kind, url, e);
+    }
+  }
+
+  if (!allEntries.length) {
+    out.innerHTML = '<div class="muted">No catalogs or entries loaded.</div>';
+    return;
+  }
+
+  const matcher = makeMatcher(q, orMode);
+  const results = [];
+
+  // Stream through entries (sequential to stay under browser+GitHub limits)
+  for (const e of allEntries) {
+    const txtUrl = resolveUrl(e.catalogUrl, e.url_txt);
+    try {
+      const res = await fetch(txtUrl, {cache:'no-store'});
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (!text) continue;
+      if (matcher(text)) {
+        const snips = makeSnippets(text, q, snMax, win);
+        results.push({ ...e, href: txtUrl, snippets: snips });
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Render
+  if (!results.length) {
+    out.innerHTML = '<div class="muted">No matches.</div>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  results.forEach(r => {
+    const box = document.createElement('div');
+    box.className = 'doc';
+    box.innerHTML = `
+      <header>
+        <a href="${r.href}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
+        <span class="meta">• ${escapeHtml(r.kind)}</span>
+      </header>
+      ${r.snippets.map(s => `<div class="snip">${s}</div>`).join('')}
+    `;
+    frag.appendChild(box);
+  });
+  out.innerHTML = '';
+  out.appendChild(frag);
+}
+
+/* wire up */
+document.getElementById('go').addEventListener('click', runSearch);
+document.getElementById('q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runSearch(); });
+
+// optional: load query from ?q= and run
+const params = new URLSearchParams(location.search);
+if (params.get('q')) {
+  document.getElementById('q').value = params.get('q');
+  if (params.get('or') === '1') document.getElementById('orMode').checked = true;
+  runSearch();
+}
 </script>
 </body>
 </html>
