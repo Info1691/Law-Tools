@@ -6,7 +6,7 @@
   --muted:#9fb0c4;
   --card:#121a24;
   --card-border:#243245;
-  --accent:#3c82f6; /* your blue */
+  --accent:#3c82f6;
   --chip:#26364b;
   --mark-bg:#ffe08a;
   --mark-fg:#1b1b1b;
@@ -29,7 +29,7 @@ html,body{
   display:flex;align-items:center;gap:.8rem;
   padding:.8rem 1rem;
 }
-.header img{height:22px; width:auto;}
+.header img{height:22px;width:auto;}
 .header .brand{font-weight:600;letter-spacing:.2px}
 .header .brand small{opacity:.7;font-weight:500;margin-left:.5rem}
 
@@ -67,7 +67,6 @@ html,body{
   padding:12px 14px;
   box-shadow:0 6px 16px rgba(0,0,0,.25);
   color:var(--text);
-  /* ensure readability even if JS left an opacity somewhere */
   opacity:1 !important; filter:none !important;
 }
 
@@ -79,7 +78,7 @@ html,body{
   background:var(--chip); padding:.2rem .5rem;border-radius:999px;
   border:1px solid var(--card-border); font-size:.8rem; color:#c8d6e8
 }
-.card .title{font-weight:600}
+.card .title{font-weight:600;margin-bottom:.25rem}
 .card a.open{
   color:#fff;background:transparent;border:1px solid var(--accent);
   padding:.15rem .45rem;border-radius:6px;text-decoration:none
@@ -96,7 +95,6 @@ mark{background:var(--mark-bg);color:var(--mark-fg);padding:0 .15rem;border-radi
   background:rgba(18,26,36,.55)
 }
 
-/* accessibility tweaks */
 @media (max-width:700px){
   .header .brand{font-size:.95rem}
   .card{padding:10px 12px}
