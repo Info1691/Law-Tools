@@ -1,189 +1,188 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>Agent 3 — Trust Law (BM25 index)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="brand.css" rel="stylesheet" />
-  <style>
-    body { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    .bar { display:flex; gap:8px; align-items:center; }
-    input[type=text]{ flex:1; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#0d1117; color:#eee; }
-    button{ padding:10px 14px; border-radius:8px; border:1px solid #333; background:#1f6feb; color:white; }
-    button[disabled]{ opacity:.6; cursor:not-allowed; }
-    .meta{ opacity:.75; font-size:.9rem; }
-    .hit{ background:#0f1724; border:1px solid #223; border-radius:12px; padding:14px; margin:14px 0; }
-    .title{ font-weight:600; }
-    mark{ background:#444; padding:0 .15rem; border-radius:3px; }
-    .diag{ background:#0a0f17; border:1px dashed #2a2f3a; border-radius:10px; padding:10px; margin-top:14px; white-space:pre-wrap; }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/lunr@2.3.9/lunr.min.js"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="logo.png">
+  <link rel="stylesheet" href="brand.css">
+  <link rel="stylesheet" href="agent3.css">
 </head>
 <body>
-  <h1>Agent 3 — Trust Law (BM25 index)</h1>
-  <div class="bar">
-    <input id="q" type="text" placeholder='beddoe consent litigation, Saunders v Vautier, JTL 1984 s 5, trustee proper law' />
-    <label class="meta"><input id="or" type="checkbox"> OR mode</label>
-    <button id="go" disabled>Search</button>
-  </div>
+  <header class="header">
+    <div class="wrap">
+      <img src="logo.png" alt="WWBCB">
+      <div class="brand">Agent 3 — Trust Law <small>(BM25 index)</small></div>
+    </div>
+  </header>
 
-  <p class="meta">Searches <em>all</em> TXT listed in the catalogs on <code>texts.wwwbcb.org</code>. Results are chunk-level BM25 matches with source links. No model inference; no hallucinations.</p>
+  <main class="main">
+    <form class="searchbar" id="searchForm">
+      <input id="q" type="text"
+             placeholder="e.g., beddoe consent litigation, Saunders v Vautier, JTL 1984 s 5, trustee proper law">
+      <label title="Return results if ANY term matches">
+        <input id="orMode" type="checkbox"> OR mode
+      </label>
+      <button class="btn" type="submit">Search</button>
+    </form>
 
-  <div id="out" class="meta">Loading index…</div>
-  <div id="diag" class="diag" style="display:none"></div>
+    <p class="note">
+      Searches <strong>all TXT</strong> listed in the catalogs on <em>texts.wwwbcb.org</em>. Results are chunk-level
+      BM25/Lunr matches with source links. No model inference; no hallucinations.
+    </p>
 
-<script>
-const DIAG = document.getElementById('diag');
-const OUT  = document.getElementById('out');
-const GO   = document.getElementById('go');
-const ORCB = document.getElementById('or');
-const Q    = document.getElementById('q');
+    <div id="results" class="results"></div>
+    <div id="diag" class="diagnostics" style="display:none"></div>
+  </main>
 
-// Try both locations; use whichever responds
-const CANDIDATES = [
-  'https://texts.wwwbcb.org/data/agent3/',
-  '/data/agent3/'
-];
+  <!-- Lunr (BM25-like) -->
+  <script src="https://unpkg.com/lunr@2.3.9/lunr.min.js"></script>
+  <script>
+  (function(){
+    // ====== CONFIG — change if your build outputs live elsewhere ======
+    const INDEX_URL = 'https://texts.wwwbcb.org/agent3-bm25/agent3.json';
+    const DOCS_URL  = 'https://texts.wwwbcb.org/agent3-bm25/docs.json';
+    // ================================================================
 
-let BASE = null;
-let idx = null;
-let chunks = new Map(); // id -> {id,src,title,kind,juris,url,offset,text}
+    const els = {
+      form: document.getElementById('searchForm'),
+      q:    document.getElementById('q'),
+      or:   document.getElementById('orMode'),
+      out:  document.getElementById('results'),
+      diag: document.getElementById('diag')
+    };
 
-function showDiag(s){ DIAG.style.display='block'; DIAG.textContent = String(s); }
-function appendDiag(s){ DIAG.style.display='block'; DIAG.textContent += '\n' + String(s); }
-function esc(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+    let idx = null;           // lunr.Index
+    let docs = [];            // [{id,title,kind,jurisdiction,text,url}]
+    let byId = Object.create(null);
 
-async function headOk(url){
-  try{
-    const res = await fetch(url, { method:'GET', cache:'no-store' });
-    return res.ok;
-  }catch(e){ return false; }
-}
+    // Utility: escape HTML safely
+    const esc = s => (s+'')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
-async function pickBase(){
-  for (const base of CANDIDATES){
-    if (await headOk(base + 'lunr-index.json')) return base;
-  }
-  return null;
-}
-
-function clean(s){
-  return s
-    .replace(/^\uFEFF/, '')
-    .replace(/\u00A0/g,' ')
-    .replace(/\u200B/g,'')
-    .replace(/\r\n/g,'\n');
-}
-
-async function loadIndex(){
-  BASE = await pickBase();
-  if(!BASE){
-    showDiag('Index not found. Run the “agent3-bm25” workflow to generate data/agent3/{lunr-index.json,chunks.jsonl} in Law-Texts-ui, then reload.');
-    OUT.textContent = 'Index not found.';
-    return;
-  }
-
-  showDiag(`Using base: ${BASE}\nFetching index…`);
-  const [idxRes, chRes] = await Promise.all([
-    fetch(BASE + 'lunr-index.json', { cache:'no-store' }),
-    fetch(BASE + 'chunks.jsonl',    { cache:'no-store' })
-  ]);
-
-  if(!idxRes.ok || !chRes.ok){
-    showDiag(`Fetch failed.\nindex: ${idxRes.status}\nchunks: ${chRes.status}`);
-    OUT.textContent = 'Failed to load index.';
-    return;
-  }
-
-  // Avoid streaming (iPad Safari can null body for cross-origin). Read as text.
-  const [idxJson, chunksText] = await Promise.all([idxRes.json(), chRes.text()]);
-  idx = lunr.Index.load(idxJson);
-
-  let n=0;
-  for (const line of chunksText.split('\n')){
-    if(!line.trim()) continue;
-    try{
-      const obj = JSON.parse(line);
-      obj.text = clean(obj.text);
-      chunks.set(obj.id, obj);
-      n++;
-    }catch(e){
-      // skip bad line, but record for debugging
-      appendDiag('Bad JSONL line skipped.');
+    // Utility: mark query terms
+    function mark(txt, terms){
+      let out = esc(txt);
+      terms.forEach(t=>{
+        if(!t) return;
+        const safe = t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+        out = out.replace(new RegExp(`(${safe})`,'gi'), '<mark>$1</mark>');
+      });
+      return out;
     }
-  }
 
-  OUT.textContent = `Index loaded (${n} chunks). Enter a query.`;
-  GO.disabled = false;
-}
+    // Make a centered snippet around first match
+    function snippet(full, terms, radius=220){
+      const lower = full.toLowerCase();
+      let pos = -1;
+      for (const t of terms){
+        if(!t) continue;
+        const p = lower.indexOf(t.toLowerCase());
+        if (p >= 0 && (pos < 0 || p < pos)) pos = p;
+      }
+      if (pos < 0) pos = 0;
+      let start = Math.max(0, pos - Math.floor(radius/2));
+      let end   = Math.min(full.length, start + radius);
+      if (end - start < radius && start > 0) start = Math.max(0, end - radius);
+      const slice = full.slice(start, end);
+      return (start>0?'…':'') + mark(slice, terms) + (end<full.length?'…':'');
+    }
 
-function termsFrom(q){
-  const terms = [];
-  const ph = /"([^"]+)"/g; let m;
-  while((m = ph.exec(q))) terms.push(m[1]);
-  q = q.replace(ph,' ').trim();
-  for (const t of q.split(/\s+/).filter(Boolean)) terms.push(t);
-  return [...new Set(terms)];
-}
+    function cardHTML(hit){
+      const d = byId[hit.ref] || {};
+      const title = d.title || 'Untitled';
+      const kind  = d.kind || 'textbook';
+      const jur   = d.jurisdiction || '';
+      const url   = d.url || d.href || '#';
+      const text  = d.text || '';
+      const terms = (els.q.value||'').trim().split(/\s+/).filter(Boolean);
+      const snip  = snippet(text, terms, 560); // generous for readability
 
-function search(query, orMode){
-  if(!idx || !query.trim()) return [];
-  const t = termsFrom(query);
-  const clauses = t.map(x=>x);
-  const andQ = clauses.map(c => '+'+c).join(' ');
-  const orQ  = clauses.join(' ');
-  let res = [];
-  try{
-    res = idx.search(orMode ? orQ : andQ);
-  }catch(e){
-    appendDiag('Search parse error: '+e.message);
-    // fall back to OR
-    try { res = idx.search(orQ); } catch(_) {}
-  }
-  return res.map(r => ({ score:r.score, ...chunks.get(r.ref) })).filter(Boolean);
-}
+      return `
+      <article class="card">
+        <div class="meta">
+          <span class="pill">${esc(kind)}</span>
+          ${jur?`<span class="pill">${esc(jur)}</span>`:''}
+          <a class="open" href="${esc(url)}" target="_blank" rel="noopener">open&nbsp;TXT</a>
+        </div>
+        <div class="title">${esc(title)}</div>
+        <div class="snippet">${snip}</div>
+      </article>`;
+    }
 
-function highlight(txt, terms){
-  let s = esc(txt);
-  const sorted = [...terms].sort((a,b)=>b.length-a.length);
-  for (const t of sorted){
-    const re = new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig');
-    s = s.replace(re,'<mark>$1</mark>');
-  }
-  return s;
-}
+    function render(results, diagText){
+      if (!Array.isArray(results)) results = [];
+      if (results.length === 0){
+        els.out.innerHTML =
+          `<article class="card"><div class="snippet">No matches.</div></article>`;
+      } else {
+        els.out.innerHTML = results.map(cardHTML).join('');
+      }
+      // ensure nothing stays faded from any legacy CSS/JS
+      els.out.querySelectorAll('.card').forEach(el=>{
+        el.style.opacity = 1; el.style.filter = 'none';
+      });
 
-function render(hits, query){
-  const t = termsFrom(query);
-  if(!hits.length){
-    OUT.innerHTML = `<p class="meta">No matches in the catalogs.</p>`;
-    return;
-  }
-  const html = hits.slice(0,50).map(h=>{
-    const snip = highlight(h.text.slice(0,600).replace(/\n/g,' '), t);
-    return `
-      <div class="hit">
-        <div class="title">${esc(h.title)} <span class="meta">(${esc(h.kind)}${h.juris?'; '+esc(h.juris):''})</span></div>
-        <div class="meta"><a href="${h.url}" target="_blank" rel="noopener">open TXT</a></div>
-        <div style="margin-top:8px">${snip}</div>
-      </div>
-    `;
-  }).join('');
-  OUT.innerHTML = html;
-}
+      if (diagText){
+        els.diag.style.display = 'block';
+        els.diag.textContent = diagText;
+      } else {
+        els.diag.style.display = 'none';
+        els.diag.textContent = '';
+      }
+      document.body.classList.remove('loading');
+    }
 
-GO.addEventListener('click', ()=>{
-  const q = Q.value || '';
-  const hits = search(q, ORCB.checked);
-  render(hits, q);
-});
-Q.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !GO.disabled){ GO.click(); }});
+    function buildQuery(raw, orMode){
+      raw = (raw||'').trim();
+      if (!raw) return '';
+      const parts = raw.split(/\s+/).filter(Boolean);
+      if (orMode) return parts.join(' ');
+      // lunr AND: prefix each term with +
+      return parts.map(t => (t.startsWith('+')?t:`+${t}`)).join(' ');
+    }
 
-// boot
-loadIndex().catch(e=>{
-  showDiag('Loader error: '+e.message);
-  OUT.textContent = 'Failed to load index.';
-});
-</script>
+    function doSearch(ev){
+      if (ev) ev.preventDefault();
+      if (!idx){ render([], 'Index loading…'); return; }
+      const q = buildQuery(els.q.value, els.or.checked);
+      if (!q){ render([], 'Enter one or more terms.'); return; }
+      let hits = [];
+      try {
+        hits = idx.search(q);
+      } catch (e){
+        render([], `Query error: ${e.message || e}`);
+        return;
+      }
+      // Diagnostics
+      const diag = `Docs: ${docs.length} · Query: ${els.q.value} · OR=${!!els.or.checked} · Hits: ${hits.length}`;
+      render(hits.slice(0, 200), diag); // cap to avoid massive DOMs
+    }
+
+    // Wire UI
+    els.form.addEventListener('submit', doSearch);
+    els.q.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+        els.or.checked = !els.or.checked;
+        e.preventDefault();
+      }
+    });
+
+    // Load index + docs
+    document.body.classList.add('loading');
+    Promise.all([ fetch(INDEX_URL).then(r=>r.json()), fetch(DOCS_URL).then(r=>r.json()) ])
+      .then(([idxJson, docsJson])=>{
+        idx = lunr.Index.load(idxJson);
+        docs = Array.isArray(docsJson) ? docsJson : (docsJson.docs || []);
+        byId = Object.fromEntries(docs.map(d => [String(d.id ?? d.ref ?? d.doc ?? d.i), d]));
+        // first paint: no search yet
+        render([], `Loaded index (${docs.length} docs).`);
+      })
+      .catch(err=>{
+        render([], `Failed to load index/docs — ${err && err.message ? err.message : err}`);
+      });
+  })();
+  </script>
 </body>
 </html>
