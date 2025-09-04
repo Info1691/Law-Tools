@@ -1,56 +1,50 @@
 name: agent3-bm25
 on:
-  workflow_dispatch: {}
-  schedule:
-    - cron: "17 2 * * *"  # nightly
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
-      - name: Checkout Law-Tools
+      - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
 
-      - name: Checkout target (Law-Texts-ui)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Keep it simple: install lunr directly (no lockfile needed)
+      - name: Install deps
+        run: npm i --no-audit --no-fund lunr@2.3.9
+
+      - name: Checkout target repo (Law-Texts-ui)
         uses: actions/checkout@v4
         with:
           repository: Info1691/Law-Texts-ui
           path: target
           token: ${{ secrets.TEXTS_RW_TOKEN }}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install deps (lunr only)
-        run: |
-          npm init -y >/dev/null 2>&1 || true
-          npm install lunr@2.x
-
       - name: Build BM25 index
         env:
-          CATALOG_TEXTBOOKS: https://texts.wwwbcb.org/texts/catalog.json
-          CATALOG_LAWS:      https://texts.wwwbcb.org/laws.json
-          CATALOG_RULES:     https://texts.wwwbcb.org/rules.json
+          # Give Node a bigger heap for the index build
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
-          node scripts/agent3_build.mjs
+          mkdir -p target/data/agent3
+          node scripts/agent3_build.mjs --out target/data/agent3
 
       - name: Commit & push index into Law-Texts-ui
-        working-directory: target
         run: |
-          set -e
-          mkdir -p data/agent3
-          cp ../out/lunr-index.json data/agent3/lunr-index.json
-          cp ../out/chunks.jsonl    data/agent3/chunks.jsonl
-          git config user.name  "law-tools-bot"
-          git config user.email "actions@github.com"
-          git add data/agent3/lunr-index.json data/agent3/chunks.jsonl
+          cd target
+          git config user.name  "agent3"
+          git config user.email "agent3@users.noreply.github.com"
+          git add data/agent3/lunr-index.json data/agent3/chunks.jsonl || true
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Agent3: update BM25 index"
+            git commit -m "agent3: refresh BM25 index"
             git push
           fi
