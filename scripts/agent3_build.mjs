@@ -1,126 +1,184 @@
-/* Build a BM25 (Lunr) index over ALL TXT in catalogs.
- * Output:
- *   out/lunr-index.json  — serialized lunr index
- *   out/chunks.jsonl     — newline-delimited JSON {id,src,title,kind,juris,url,offset,text}
- * These are committed by CI into Law-Texts-ui/data/agent3/.
+#!/usr/bin/env node
+/**
+ * Build Agent 3 BM25 index from catalogs on texts.wwwbcb.org
+ * Writes:
+ *   <out>/chunks.jsonl    (JSONL of chunk metadata + text)
+ *   <out>/lunr-index.json (Lunr v2 index over chunk text, ref=id)
+ *
+ * Usage:
+ *   node scripts/agent3_build.mjs --out target/data/agent3
  */
-import fs from 'node:fs';
-import path from 'node:path';
+
+import fs from 'fs';
+import fsp from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import lunr from 'lunr';
 
-// --- config
+// ---------- config ----------
 const CATALOGS = [
-  { url: process.env.CATALOG_TEXTBOOKS, kind: 'textbook' },
-  { url: process.env.CATALOG_LAWS,      kind: 'law' },
-  { url: process.env.CATALOG_RULES,     kind: 'rule' },
+  'https://texts.wwwbcb.org/texts/catalog.json',
+  'https://texts.wwwbcb.org/laws.json',
+  'https://texts.wwwbcb.org/rules.json'
 ];
-const OUTDIR = 'out';
-const CHUNK_SIZE = 1400;      // characters
-const CHUNK_OVERLAP = 200;    // characters
 
-if (!fs.existsSync(OUTDIR)) fs.mkdirSync(OUTDIR, { recursive: true });
+const ABS_BASE = 'https://texts.wwwbcb.org/'; // for resolving ./data/… paths
 
-// --- helpers
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const clean = (s) =>
-  (s || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/\u00A0/g, ' ')
-    .replace(/\u200B/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n');
+// Chunking tuned for good recall without ballooning memory
+const CHUNK_SIZE = 850;
+const CHUNK_OVERLAP = 120;
 
-function chunkText(full) {
-  const chunks = [];
-  let i = 0, id = 0;
-  while (i < full.length) {
-    const end = Math.min(full.length, i + CHUNK_SIZE);
-    const slice = full.slice(i, end);
-    chunks.push({ id: id++, text: slice, offset: i });
-    i = end - CHUNK_OVERLAP;
-    if (i < 0) i = 0;
-    if (i >= full.length) break;
+// Optionally limit docs for debugging via env, e.g. MAX_DOCS=5
+const MAX_DOCS = process.env.MAX_DOCS ? parseInt(process.env.MAX_DOCS, 10) : Infinity;
+// ---------------------------
+
+function resolveOutDir(argv) {
+  const i = argv.indexOf('--out');
+  if (i === -1 || !argv[i + 1]) {
+    console.error('Missing --out <dir>');
+    process.exit(1);
   }
-  return chunks;
+  return argv[i + 1];
 }
 
-// Resolve url_txt possibly relative to the catalog JSON URL
-function resolveUrl(catalogUrl, urlTxt) {
-  try { return new URL(urlTxt, catalogUrl).href; } catch { return urlTxt; }
+function cleanText(s) {
+  return s
+    .replace(/^\uFEFF/, '')   // BOM
+    .replace(/\u00A0/g, ' ')  // NBSP
+    .replace(/\u200B/g, '')   // ZWSP
+    .replace(/\r\n/g, '\n');
 }
 
-// --- load catalogs
-async function loadCatalog(c) {
-  const res = await fetch(c.url);
-  if (!res.ok) throw new Error(`Catalog fetch failed: ${c.url} -> ${res.status}`);
-  const data = await res.json();
-  // both schemas supported: array of objects with url_txt + title, or url fields directly
-  return (data.items || data).map((it, idx) => ({
-    kind: c.kind,
-    title: it.title || it.name || `untitled-${idx}`,
-    juris: it.jurisdiction || it.juris || '',
-    url: resolveUrl(c.url, it.url_txt || it.url || it.href),
-    src: c.url,
-  }));
+function kindFromPath(p) {
+  if (p.includes('/textbooks/')) return 'textbook';
+  if (p.includes('/laws/')) return 'law';
+  if (p.includes('/rules/')) return 'rule';
+  return 'unknown';
+}
+
+function jurisFromPath(p) {
+  if (p.includes('/jersey/')) return 'jersey';
+  if (p.includes('/uk/')) return 'uk';
+  return '';
+}
+
+function toAbs(urlTxt) {
+  // catalogs usually carry ./data/… or /data/…
+  if (/^https?:\/\//i.test(urlTxt)) return urlTxt;
+  if (urlTxt.startsWith('./')) return new URL(urlTxt.slice(2), ABS_BASE).toString();
+  if (urlTxt.startsWith('/'))  return new URL(urlTxt.slice(1), ABS_BASE).toString();
+  return new URL(urlTxt, ABS_BASE).toString();
+}
+
+async function fetchJSON(u) {
+  const r = await fetch(u, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${u}`);
+  return r.json();
 }
 
 async function fetchText(u) {
-  // be nice to GH Pages
-  await sleep(80);
-  const res = await fetch(u, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`TXT fetch failed: ${u} -> ${res.status}`);
-  return await res.text();
+  const r = await fetch(u, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${u}`);
+  return r.text();
 }
 
-const catalogs = [];
-for (const c of CATALOGS) {
-  if (!c.url) continue;
-  catalogs.push(...await loadCatalog(c));
-}
-
-// --- build chunks + docs
-const chunks = [];
-let globalId = 0;
-for (const doc of catalogs) {
-  try {
-    const txt = clean(await fetchText(doc.url));
-    const parts = chunkText(txt);
-    for (const p of parts) {
-      const id = `d${globalId++}`;
-      chunks.push({
-        id,
-        src: doc.src,
-        title: doc.title,
-        kind: doc.kind,
-        juris: doc.juris,
-        url: doc.url,
-        offset: p.offset,
-        text: p.text
-      });
-    }
-  } catch (e) {
-    console.error('SKIP (fetch error):', doc.url, String(e));
+function* chunker(text) {
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    const end = Math.min(n, i + CHUNK_SIZE);
+    yield text.slice(i, end);
+    if (end === n) break;
+    i = Math.max(end - CHUNK_OVERLAP, i + 1);
   }
 }
 
-// --- lunr index (BM25)
-const idx = lunr(function () {
-  this.ref('id');
-  this.field('text');
-  this.field('title');
-  this.field('kind');
-  this.field('juris');
+async function gatherDocs() {
+  const all = [];
+  for (const c of CATALOGS) {
+    try {
+      const arr = await fetchJSON(c);
+      // expect array of { title, url_txt, ... }
+      for (const row of arr) {
+        if (!row || !row.url_txt) continue;
+        const abs = toAbs(row.url_txt);
+        const p = new URL(abs).pathname; // /data/…
+        all.push({
+          title: row.title || path.basename(p),
+          url: abs,
+          relpath: p,
+          kind: row.kind || kindFromPath(p),
+          juris: row.jurisdiction || jurisFromPath(p),
+        });
+      }
+    } catch (e) {
+      console.warn(`Catalog load warning for ${c}: ${e.message}`);
+    }
+  }
+  // de-dupe by URL (some catalogs may overlap)
+  const seen = new Set();
+  const deduped = [];
+  for (const d of all) {
+    if (seen.has(d.url)) continue;
+    seen.add(d.url);
+    deduped.push(d);
+  }
+  return deduped.slice(0, MAX_DOCS);
+}
 
-  // smaller pipeline to keep original tokens useful for legal cites
-  this.pipeline.reset();
-  this.searchPipeline.reset();
+async function main() {
+  const outDir = resolveOutDir(process.argv);
+  await fsp.mkdir(outDir, { recursive: true });
 
-  for (const c of chunks) this.add(c);
+  const chunksPath = path.join(outDir, 'chunks.jsonl');
+  const idxPath    = path.join(outDir, 'lunr-index.json');
+
+  const docs = await gatherDocs();
+  console.log(`Building from ${docs.length} documents…`);
+  const ws = fs.createWriteStream(chunksPath, { encoding: 'utf8' });
+
+  let idCounter = 1;
+
+  // Build Lunr index (lean): ref=id, field=text only
+  const builder = new lunr.Builder();
+  builder.ref('id');
+  builder.field('text');
+
+  for (const d of docs) {
+    let txt = '';
+    try {
+      txt = cleanText(await fetchText(d.url));
+    } catch (e) {
+      console.warn(`Fetch failed for ${d.url}: ${e.message}`);
+      continue;
+    }
+
+    let local = 0;
+    for (const piece of chunker(txt)) {
+      const obj = {
+        id: String(idCounter++),
+        url: d.url,
+        title: d.title,
+        kind: d.kind,
+        juris: d.juris,
+        text: piece
+      };
+      ws.write(JSON.stringify(obj) + '\n');
+      // add only the minimum to the index to keep memory modest
+      builder.add({ id: obj.id, text: obj.text });
+      local++;
+    }
+    console.log(`✓ ${d.title} — ${local} chunks`);
+  }
+
+  ws.end();
+
+  const index = builder.build();
+  await fsp.writeFile(idxPath, JSON.stringify(index), 'utf8');
+  console.log(`Wrote:\n  ${chunksPath}\n  ${idxPath}`);
+}
+
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
 });
-
-fs.writeFileSync(path.join(OUTDIR, 'lunr-index.json'), JSON.stringify(idx), 'utf8');
-const w = fs.createWriteStream(path.join(OUTDIR, 'chunks.jsonl'));
-for (const c of chunks) w.write(JSON.stringify(c) + '\n');
-w.end();
-console.log(`Indexed ${chunks.length} chunks across ${catalogs.length} documents.`);
