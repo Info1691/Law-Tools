@@ -1,260 +1,234 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Texts Search Tool</title>
-  <style>
-    :root{
-      --bg:#0f172a; --panel:#111827; --accent:#2563eb; --muted:#9ca3af; --ok:#10b981; --bad:#f43f5e;
-    }
-    html,body{margin:0;background:var(--bg);color:#e5e7eb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-    .wrap{max-width:1000px;margin:24px auto;padding:0 16px}
-    h1{font-size:18px;margin:0 0 14px}
-    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
-    input[type=text]{flex:1;min-width:280px;background:#0b1220;border:1px solid #1f2937;border-radius:8px;padding:10px 12px;color:#e5e7eb}
-    button{background:var(--accent);border:0;color:white;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    .toggle{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
-    .small{font-size:12px;color:var(--muted)}
-    .section{margin-top:18px}
-    .card{background:var(--panel);border:1px solid #1f2937;border-radius:10px;padding:14px;margin:10px 0}
-    .title{font-weight:700;margin:0 0 6px}
-    .badge{display:inline-block;font-size:11px;border-radius:999px;padding:2px 8px;margin-left:6px;background:#0b1220;border:1px solid #1f2937;color:#93c5fd}
-    mark{background:#f59e0b33;color:#fff;padding:0 .15em;border-radius:3px}
-    a{color:#93c5fd;text-decoration:none}
-    a:hover{text-decoration:underline}
-    .err{color:var(--bad);font-family:ui-monospace,Consolas,monospace;white-space:nowrap;overflow:auto}
-    .muted{color:var(--muted)}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Texts Search Tool</title>
+<style>
+:root{--bg:#0f172a;--panel:#111827;--muted:#9ca3af;--accent:#2563eb;--bad:#f43f5e}
+html,body{margin:0;background:var(--bg);color:#e5e7eb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+.wrap{max-width:1024px;margin:24px auto;padding:0 16px}
+h1{font-size:18px;margin:0 0 12px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+input[type=text]{flex:1;min-width:280px;background:#0b1220;border:1px solid #1f2937;border-radius:8px;padding:10px 12px;color:#e5e7eb}
+input[type=number]{background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px 8px;color:#e5e7eb}
+button{background:var(--accent);border:0;color:#fff;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
+button:disabled{opacity:.5}
+.small{font-size:12px;color:var(--muted)}
+.section{margin-top:18px}
+h3{font-size:15px;margin:10px 0}
+.card{background:var(--panel);border:1px solid #1f2937;border-radius:10px;padding:12px;margin:10px 0}
+.badge{display:inline-block;background:#0b1220;border:1px solid #1f2937;border-radius:999px;padding:2px 8px;margin-left:6px;font-size:11px;color:#93c5fd}
+mark{background:#f59e0b33;color:#fff;padding:0 .15em;border-radius:3px}
+a{color:#93c5fd;text-decoration:none}
+a:hover{text-decoration:underline}
+.err{color:var(--bad);font-family:ui-monospace,Consolas,monospace}
+.muted{color:var(--muted)}
+#diag{margin-top:16px}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1220;border:1px solid #1f2937;border-radius:8px;padding:10px}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Texts Search Tool</h1>
+<div class="wrap">
+  <h1>Texts Search Tool</h1>
 
-    <div class="controls">
-      <input id="q" type="text" placeholder='e.g., "beddoe consent" litigation' />
-      <button id="go">Search</button>
-      <label class="toggle"><input id="orMode" type="checkbox" /> OR mode</label>
-      <label class="toggle">Window: <input id="win" type="number" min="60" max="800" step="20" value="240" style="width:80px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px 8px;color:#e5e7eb" /></label>
-      <label class="toggle">Snippets/doc: <input id="k" type="number" min="1" max="12" step="1" value="6" style="width:64px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px 8px;color:#e5e7eb" /></label>
-    </div>
-
-    <div class="small" id="meta">Searches TXT via catalogs on <b>texts.wwwbcb.org</b>. Relative <code>url_txt</code> entries are resolved against their catalog URL. Search is case-insensitive. AND by default; toggle OR to widen.</div>
-
-    <div class="section" id="summary" class="small" style="margin-top:8px;"></div>
-
-    <div class="section">
-      <h3>Textbooks <span id="tbCount" class="badge">0</span></h3>
-      <div id="tb"></div>
-    </div>
-
-    <div class="section">
-      <h3>Laws <span id="lawCount" class="badge">0</span></h3>
-      <div id="laws"></div>
-    </div>
-
-    <div class="section">
-      <h3>Rules <span id="ruleCount" class="badge">0</span></h3>
-      <div id="rules"></div>
-    </div>
+  <div class="controls">
+    <input id="q" type="text" placeholder='e.g., "beddoe consent" litigation'/>
+    <button id="go">Search</button>
+    <label class="small"><input id="orMode" type="checkbox"/> OR mode</label>
+    <label class="small">Window: <input id="win" type="number" min="60" max="800" step="20" value="240" style="width:80px"/></label>
+    <label class="small">Snippets/doc: <input id="k" type="number" min="1" max="12" step="1" value="6" style="width:64px"/></label>
   </div>
+
+  <div id="meta" class="small">
+    Searches TXT via catalogs on <b>texts.wwwbcb.org</b>. AND by default (tick OR to widen). Phrases with quotes.
+  </div>
+  <div id="summary" class="small" style="margin-top:6px;"></div>
+
+  <div class="section">
+    <h3>Textbooks <span id="tbCount" class="badge">0</span></h3>
+    <div id="tb"></div>
+  </div>
+
+  <div class="section">
+    <h3>Laws <span id="lawCount" class="badge">0</span></h3>
+    <div id="laws"></div>
+  </div>
+
+  <div class="section">
+    <h3>Rules <span id="ruleCount" class="badge">0</span></h3>
+    <div id="rules"></div>
+  </div>
+
+  <div id="diag" class="section">
+    <h3>Diagnostics</h3>
+    <div id="diagBody" class="card small muted">Ready.</div>
+  </div>
+</div>
 
 <script>
 (() => {
-  // ---- Catalog locations (override via ?textbooks=…&laws=…&rules=…) ----
-  const params = new URLSearchParams(location.search);
-  const CATALOGS = {
-    textbooks: params.get('textbooks') || 'https://texts.wwwbcb.org/texts/catalog.json',
-    laws:      params.get('laws')      || 'https://texts.wwwbcb.org/laws.json',
-    rules:     params.get('rules')     || 'https://texts.wwwbcb.org/rules.json'
+  // ---- Catalogs (override with ?textbooks=…&laws=…&rules=…) ----
+  const qs = new URLSearchParams(location.search);
+  const CATS = {
+    textbooks: qs.get('textbooks') || 'https://texts.wwwbcb.org/texts/catalog.json',
+    laws:      qs.get('laws')      || 'https://texts.wwwbcb.org/laws.json',
+    rules:     qs.get('rules')     || 'https://texts.wwwbcb.org/rules.json'
   };
 
-  // ---- Helpers ----
-  const byId = id => document.getElementById(id);
-  const fmt = s => (s||'').toString();
-  const normalise = s => fmt(s)
-      .normalize('NFKD')
-      .replace(/[^\x00-\x7F]/g,' ')     // strip odd OCR chars
-      .toLowerCase()
-      .replace(/\s+/g,' ')
-      .trim();
+  const $ = id => document.getElementById(id);
+  const log = msg => { const el = $('diagBody'); el.innerHTML = `<pre>${(el.textContent||'')}\n${msg}</pre>`; };
+  window.onerror = (m,s,l,c,e)=>{ log(`JS error: ${m} @ ${s}:${l}`); };
 
-  // Parse query into phrases and terms:
+  const norm = s => (s||'').toString()
+    .normalize('NFKD')
+    .replace(/[^\x00-\x7F]/g,' ')
+    .toLowerCase()
+    .replace(/\s+/g,' ')
+    .trim();
+
   function parseQuery(q){
     const phrases = [];
-    const terms = [];
-    q.replace(/"([^"]+)"/g,(m,p)=>{ phrases.push(normalise(p)); return ' ';});
-    const leftover = normalise(q.replace(/"([^"]+)"/g,' '));
-    if (leftover) leftover.split(' ').filter(Boolean).forEach(t=>terms.push(t));
+    q.replace(/"([^"]+)"/g,(m,p)=>{ phrases.push(norm(p)); return ' ';});
+    const rest = norm(q.replace(/"([^"]+)"/g,' '));
+    const terms = rest ? rest.split(' ').filter(Boolean) : [];
     return {phrases, terms};
   }
 
-  // Build absolute URL for url_txt possibly relative to catalog
-  function resolveUrlTxt(urlTxt, catalogUrl){
-    try{
-      // If already absolute:
-      const u = new URL(urlTxt);
-      return u.href;
-    }catch(_){
-      // Relative -> resolve against catalog origin
-      const base = new URL(catalogUrl);
-      // If urlTxt begins with "./" or "/data", join against catalog origin
-      return new URL(urlTxt, base).href;
-    }
+  function absTxt(urlTxt, catUrl){
+    try{ return new URL(urlTxt).href; }
+    catch{ return new URL(urlTxt, new URL(catUrl)).href; }
   }
 
-  // Highlight all query bits inside a snippet
-  function highlightSnippet(snippet, qBits){
-    let out = snippet;
-    qBits.forEach(bit=>{
-      if(!bit) return;
-      const rx = new RegExp(bit.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
-      out = out.replace(rx, m=>`<mark>${m}</mark>`);
-    });
-    return out;
+  async function getJSON(url){
+    const r = await fetch(url, {cache:'no-store'});
+    if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return await r.json();
   }
-
-  async function fetchTextFull(url){
-    // full fetch (integrity > speed)
+  async function getTXT(url){
     const r = await fetch(url, {cache:'no-store'});
     if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     return await r.text();
   }
 
-  function snippetsFrom(text, q, windowChars, maxSnips){
-    if (!q.terms.length && !q.phrases.length) return [];
-    const qBits = [...q.phrases, ...q.terms];
-    // Choose a seed term (first available) to find anchors for snippets
-    const seed = qBits[0];
-    const norm = normalise(text);
-    const anchors = [];
-    let idx = 0;
-    while (anchors.length < maxSnips) {
-      const found = norm.indexOf(seed, idx);
-      if (found < 0) break;
-      anchors.push(found);
-      idx = found + seed.length;
-    }
-    if (anchors.length === 0) return [];
-
-    const clips = anchors.map(pos=>{
-      const start = Math.max(0, pos - windowChars);
-      const end   = Math.min(text.length, pos + windowChars);
-      const snip = text.slice(start, end).replace(/\s+/g,' ');
-      return highlightSnippet(snip, qBits);
-    });
-
-    return clips.slice(0, maxSnips);
-  }
-
   function matchDoc(text, q, orMode){
-    const n = normalise(text);
-    const need = [];
-    q.phrases.forEach(p=>need.push(n.includes(p)));
-    q.terms.forEach(t=>need.push(n.includes(t)));
-    if (need.length === 0) return false;
-    return orMode ? need.some(Boolean) : need.every(Boolean);
+    if (!q.phrases.length && !q.terms.length) return false;
+    const n = norm(text);
+    const hits = [
+      ...q.phrases.map(p=>n.includes(p)),
+      ...q.terms.map(t=>n.includes(t))
+    ];
+    return orMode ? hits.some(Boolean) : hits.every(Boolean);
   }
 
-  function renderNoMatches(container){
-    container.innerHTML = `<div class="card muted">No matches in this category.</div>`;
+  function snippets(text, q, win, k){
+    const bits = [...q.phrases, ...q.terms];
+    if (!bits.length) return [];
+    const n = norm(text);
+    const seed = bits[0];
+    let i = 0, anchors=[];
+    while (anchors.length < k){
+      const j = n.indexOf(seed, i);
+      if (j < 0) break;
+      anchors.push(j);
+      i = j + seed.length;
+    }
+    if (!anchors.length) return [];
+    return anchors.map(a=>{
+      const start = Math.max(0, a - win), end = Math.min(text.length, a + win);
+      let s = text.slice(start, end).replace(/\s+/g,' ');
+      bits.forEach(b=>{
+        if(!b) return;
+        const rx = new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig');
+        s = s.replace(rx, m=>`<mark>${m}</mark>`);
+      });
+      return s;
+    });
   }
 
-  function renderFetchError(container, url, err){
-    const safe = url.replace(/^https?:\/\//,'');
-    const line = `<div class="card"><div class="err">Fetch failed: ${safe} — ${fmt(err.message||err)}</div></div>`;
-    container.insertAdjacentHTML('beforeend', line);
+  function renderNo(container){ container.innerHTML = `<div class="card muted">No matches in this category.</div>`; }
+  function renderErr(container, url, err){
+    container.insertAdjacentHTML('beforeend',
+      `<div class="card"><div class="err">Fetch failed: ${url.replace(/^https?:\/\//,'')} — ${err.message||err}</div></div>`);
   }
-
-  function renderHit(container, doc, snippets){
-    const meta = [doc.jurisdiction || doc.region || '', doc.year || ''].filter(Boolean).join(' · ');
-    const openTxt = `<a href="${doc._absUrl}" target="_blank" rel="noopener">open TXT</a>`;
-    const snipHtml = snippets.map(s=>`<div style="margin:8px 0">${s}</div>`).join('');
+  function renderHit(container, doc, snips){
+    const title = doc.title || doc.name || 'Untitled';
+    const meta = [doc.jurisdiction||doc.region||'', doc.year||''].filter(Boolean).join(' · ');
+    const open = `<a href="${doc._txt}" target="_blank" rel="noopener">open TXT</a>`;
     container.insertAdjacentHTML('beforeend', `
       <div class="card">
-        <div class="title">${fmt(doc.title || doc.name || 'Untitled')} <span class="badge">${fmt(doc.kind||'text')}</span></div>
-        <div class="small muted" style="margin-bottom:6px">${meta}</div>
-        ${snipHtml || '<div class="muted">Matched, but no snippet could be generated.</div>'}
-        <div class="small" style="margin-top:8px">${openTxt}</div>
-      </div>
-    `);
+        <div><strong>${title}</strong> <span class="badge">${doc.kind||'text'}</span></div>
+        <div class="small muted" style="margin:6px 0">${meta}</div>
+        ${(snips.length? snips.map(x=>`<div style="margin:6px 0">${x}</div>`).join('') : '<div class="muted">Matched, no snippet preview.</div>')}
+        <div class="small" style="margin-top:6px">${open}</div>
+      </div>`);
   }
 
   async function loadCatalog(kind, url){
-    const res = await fetch(url, {cache:'no-store'});
-    if(!res.ok) throw new Error(`Catalog ${kind}: ${res.status} ${res.statusText}`);
-    const json = await res.json();
-    // Accept both array catalogs and object {items:[...]}
-    const items = Array.isArray(json) ? json : (json.items || []);
+    const raw = await getJSON(url);
+    const items = Array.isArray(raw) ? raw : (raw.items || []);
     return items.map(x=>({...x, kind}));
   }
 
   async function run(){
-    const qStr = byId('q').value.trim();
-    const orMode = byId('orMode').checked;
-    const W = parseInt(byId('win').value || '240', 10);
-    const K = parseInt(byId('k').value || '6', 10);
+    const qStr = $('q').value.trim();
+    const orMode = $('orMode').checked;
+    const WIN = parseInt($('win').value||'240',10);
+    const K = parseInt($('k').value||'6',10);
 
-    // Clear
-    byId('tb').innerHTML = '';
-    byId('laws').innerHTML = '';
-    byId('rules').innerHTML = '';
-    byId('tbCount').textContent = '0';
-    byId('lawCount').textContent = '0';
-    byId('ruleCount').textContent = '0';
-    byId('summary').textContent = 'Loading catalogs…';
+    $('tb').innerHTML = $('laws').innerHTML = $('rules').innerHTML = '';
+    $('tbCount').textContent = $('lawCount').textContent = $('ruleCount').textContent = '0';
+    $('summary').textContent = 'Loading catalogs…';
+    $('diagBody').textContent = 'Loading…';
 
-    let catTB=[], catL=[], catR=[];
-    try { catTB = await loadCatalog('Textbook', CATALOGS.textbooks); } catch(e){ byId('tb').innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`; }
-    try { catL  = await loadCatalog('Law',      CATALOGS.laws); }      catch(e){ byId('laws').innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`; }
-    try { catR  = await loadCatalog('Rule',     CATALOGS.rules); }     catch(e){ byId('rules').innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`; }
+    let tb=[], lw=[], rl=[];
+    try { tb = await loadCatalog('Textbook', CATS.textbooks); }
+    catch(e){ $('tb').innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`; }
+    try {  lw = await loadCatalog('Law',      CATS.laws); }
+    catch(e){ $('laws').innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`; }
+    try {  rl = await loadCatalog('Rule',     CATS.rules); }
+    catch(e){ $('rules').innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`; }
 
-    // Resolve absolute txt URLs
-    for (const d of [...catTB, ...catL, ...catR]){
-      const u = d.url_txt || d.url || d.href;
-      d._absUrl = resolveUrlTxt(u, (d.kind==='Textbook'?CATALOGS.textbooks : d.kind==='Law'?CATALOGS.laws : CATALOGS.rules));
-    }
+    // Resolve absolute TXT URLs
+    tb.forEach(d=> d._txt = absTxt(d.url_txt || d.url || d.href, CATS.textbooks));
+    lw.forEach(d=> d._txt = absTxt(d.url_txt || d.url || d.href, CATS.laws));
+    rl.forEach(d=> d._txt = absTxt(d.url_txt || d.url || d.href, CATS.rules));
+
+    const total = tb.length+lw.length+rl.length;
+    $('summary').innerHTML = `Checked <b>${total}</b> document(s). Matches — Textbooks: <span id="sumTb">0</span> · Laws: <span id="sumL">0</span> · Rules: <span id="sumR">0</span>.`;
+    log(`Catalog sizes — textbooks: ${tb.length}, laws: ${lw.length}, rules: ${rl.length}\nQuery: ${qStr||'(empty)'}  OR=${orMode}`);
 
     const q = parseQuery(qStr);
-    const docsChecked = catTB.length + catL.length + catR.length;
-    byId('summary').innerHTML = `Checked <b>${docsChecked}</b> document(s). Matches — Textbooks: <span id="sumTb">0</span> · Laws: <span id="sumL">0</span> · Rules: <span id="sumR">0</span>.`;
 
-    async function searchBucket(list, containerId, countId, sumId){
-      const container = byId(containerId);
-      if (!list.length){ renderNoMatches(container); return; }
-
+    async function scan(list, boxId, countId, sumId){
+      const box = $(boxId);
       let hits = 0;
       for (const d of list){
         try{
-          const txt = await fetchTextFull(d._absUrl);
-          const matched = qStr ? matchDoc(txt, q, orMode) : false;
-          if (matched){
-            const snips = snippetsFrom(txt, q, W, K);
-            renderHit(container, d, snips);
+          const t = await getTXT(d._txt);         // FULL text
+          const ok = qStr ? matchDoc(t, q, orMode) : false;
+          if (ok){
+            const sn = snippets(t, q, WIN, K);
+            renderHit(box, d, sn);
             hits++;
           }
         }catch(err){
-          renderFetchError(container, d._absUrl, err);
+          renderErr(box, d._txt, err);
+          log(`Fetch error for ${d._txt}: ${err.message||err}`);
         }
       }
-      byId(countId).textContent = String(hits);
-      byId(sumId).textContent = String(hits);
-      if (hits === 0) renderNoMatches(container);
+      $(countId).textContent = hits;
+      $(sumId).textContent = hits;
+      if (hits===0) renderNo(box);
     }
 
-    await searchBucket(catTB, 'tb', 'tbCount', 'sumTb');
-    await searchBucket(catL,  'laws','lawCount','sumL');
-    await searchBucket(catR,  'rules','ruleCount','sumR');
+    await scan(tb,'tb','tbCount','sumTb');
+    await scan(lw,'laws','lawCount','sumL');
+    await scan(rl,'rules','ruleCount','sumR');
   }
 
-  // Wire up
-  byId('go').addEventListener('click', run);
-  byId('q').addEventListener('keydown', e=>{ if(e.key==='Enter') run(); });
-
-  // Optional: preload a gentle query so you can sanity-check parsing
-  // byId('q').value = 'trust';
-  // run();
+  $('go').addEventListener('click', run);
+  $('q').addEventListener('keydown', e=>{ if(e.key==='Enter') run(); });
 })();
 </script>
 </body>
