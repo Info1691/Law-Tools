@@ -7,6 +7,10 @@
   <link rel="icon" href="logo.png">
   <link rel="stylesheet" href="brand.css">
   <link rel="stylesheet" href="agent3.css">
+  <style>
+    /* light touch: ensure visible even if some old CSS lingers */
+    .card{opacity:1!important;filter:none!important}
+  </style>
 </head>
 <body>
   <header class="header">
@@ -35,14 +39,18 @@
     <div id="diag" class="diagnostics" style="display:none"></div>
   </main>
 
-  <!-- Lunr (BM25-like) -->
   <script src="https://unpkg.com/lunr@2.3.9/lunr.min.js"></script>
   <script>
   (function(){
-    // ====== CONFIG — change if your build outputs live elsewhere ======
-    const INDEX_URL = 'https://texts.wwwbcb.org/agent3-bm25/agent3.json';
-    const DOCS_URL  = 'https://texts.wwwbcb.org/agent3-bm25/docs.json';
-    // ================================================================
+    // ---------- CONFIG / FALLBACKS ----------
+    const INDEX_CANDIDATES = [
+      'https://texts.wwwbcb.org/agent3-bm25/agent3.json',
+      'https://texts.wwwbcb.org/agent3/agent3.json'
+    ];
+    const DOCS_CANDIDATES = [
+      'https://texts.wwwbcb.org/agent3-bm25/docs.json',
+      'https://texts.wwwbcb.org/agent3/docs.json'
+    ];
 
     const els = {
       form: document.getElementById('searchForm'),
@@ -52,28 +60,28 @@
       diag: document.getElementById('diag')
     };
 
-    let idx = null;           // lunr.Index
-    let docs = [];            // [{id,title,kind,jurisdiction,text,url}]
+    let idx = null;                 // lunr.Index
+    let docs = [];                  // [{id,title,kind,jurisdiction,text,url}]
     let byId = Object.create(null);
+    let pending = null;             // {q, or} to auto-run when ready
 
-    // Utility: escape HTML safely
+    // ------------- helpers -------------
     const esc = s => (s+'')
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
-    // Utility: mark query terms
     function mark(txt, terms){
       let out = esc(txt);
-      terms.forEach(t=>{
-        if(!t) return;
+      for (const t of terms){
+        if(!t) continue;
         const safe = t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
         out = out.replace(new RegExp(`(${safe})`,'gi'), '<mark>$1</mark>');
-      });
+      }
       return out;
     }
 
-    // Make a centered snippet around first match
-    function snippet(full, terms, radius=220){
+    function snippet(full, terms, radius=560){
+      if (!full) return '';
       const lower = full.toLowerCase();
       let pos = -1;
       for (const t of terms){
@@ -97,38 +105,33 @@
       const url   = d.url || d.href || '#';
       const text  = d.text || '';
       const terms = (els.q.value||'').trim().split(/\s+/).filter(Boolean);
-      const snip  = snippet(text, terms, 560); // generous for readability
-
+      const snip  = snippet(text, terms, 560);
       return `
-      <article class="card">
-        <div class="meta">
-          <span class="pill">${esc(kind)}</span>
-          ${jur?`<span class="pill">${esc(jur)}</span>`:''}
-          <a class="open" href="${esc(url)}" target="_blank" rel="noopener">open&nbsp;TXT</a>
-        </div>
-        <div class="title">${esc(title)}</div>
-        <div class="snippet">${snip}</div>
-      </article>`;
+        <article class="card">
+          <div class="meta">
+            <span class="pill">${esc(kind)}</span>
+            ${jur?`<span class="pill">${esc(jur)}</span>`:''}
+            <a class="open" href="${esc(url)}" target="_blank" rel="noopener">open&nbsp;TXT</a>
+          </div>
+          <div class="title">${esc(title)}</div>
+          <div class="snippet">${snip}</div>
+        </article>`;
     }
 
     function render(results, diagText){
-      if (!Array.isArray(results)) results = [];
-      if (results.length === 0){
-        els.out.innerHTML =
-          `<article class="card"><div class="snippet">No matches.</div></article>`;
+      const list = Array.isArray(results) ? results : [];
+      if (list.length === 0){
+        els.out.innerHTML = `<article class="card"><div class="snippet">No matches.</div></article>`;
       } else {
-        els.out.innerHTML = results.map(cardHTML).join('');
+        els.out.innerHTML = list.map(cardHTML).join('');
       }
-      // ensure nothing stays faded from any legacy CSS/JS
-      els.out.querySelectorAll('.card').forEach(el=>{
-        el.style.opacity = 1; el.style.filter = 'none';
-      });
+      els.out.querySelectorAll('.card').forEach(el => { el.style.opacity=1; el.style.filter='none'; });
 
       if (diagText){
-        els.diag.style.display = 'block';
+        els.diag.style.display='block';
         els.diag.textContent = diagText;
       } else {
-        els.diag.style.display = 'none';
+        els.diag.style.display='none';
         els.diag.textContent = '';
       }
       document.body.classList.remove('loading');
@@ -138,50 +141,77 @@
       raw = (raw||'').trim();
       if (!raw) return '';
       const parts = raw.split(/\s+/).filter(Boolean);
-      if (orMode) return parts.join(' ');
-      // lunr AND: prefix each term with +
-      return parts.map(t => (t.startsWith('+')?t:`+${t}`)).join(' ');
+      return orMode ? parts.join(' ') : parts.map(t => (t.startsWith('+')?t:`+${t}`)).join(' ');
     }
 
     function doSearch(ev){
       if (ev) ev.preventDefault();
-      if (!idx){ render([], 'Index loading…'); return; }
-      const q = buildQuery(els.q.value, els.or.checked);
-      if (!q){ render([], 'Enter one or more terms.'); return; }
-      let hits = [];
-      try {
-        hits = idx.search(q);
-      } catch (e){
-        render([], `Query error: ${e.message || e}`);
+      const raw = els.q.value || '';
+      const or  = !!els.or.checked;
+      if (!idx){
+        pending = { q: raw, or };
+        render([], 'Index loading…');
         return;
       }
-      // Diagnostics
-      const diag = `Docs: ${docs.length} · Query: ${els.q.value} · OR=${!!els.or.checked} · Hits: ${hits.length}`;
-      render(hits.slice(0, 200), diag); // cap to avoid massive DOMs
+      const q = buildQuery(raw, or);
+      if (!q){ render([], 'Enter one or more terms.'); return; }
+      let hits = [];
+      try { hits = idx.search(q); }
+      catch(e){ render([], `Query error: ${e && e.message ? e.message : e}`); return; }
+      const diag = `Docs: ${docs.length} · Query: ${raw} · OR=${or} · Hits: ${hits.length}`;
+      render(hits.slice(0, 200), diag);
     }
 
-    // Wire UI
     els.form.addEventListener('submit', doSearch);
-    els.q.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
-        els.or.checked = !els.or.checked;
-        e.preventDefault();
+    els.q.addEventListener('keydown', e=>{
+      if (e.key==='Enter' && (e.metaKey||e.ctrlKey||e.shiftKey)){
+        els.or.checked = !els.or.checked; e.preventDefault();
       }
     });
 
-    // Load index + docs
-    document.body.classList.add('loading');
-    Promise.all([ fetch(INDEX_URL).then(r=>r.json()), fetch(DOCS_URL).then(r=>r.json()) ])
-      .then(([idxJson, docsJson])=>{
-        idx = lunr.Index.load(idxJson);
+    // --------- load index + docs with fallback ---------
+    async function fetchFirstGood(urls){
+      const errs = [];
+      for (const u of urls){
+        try{
+          const r = await fetch(u, { cache:'no-store' });
+          if (!r.ok) { errs.push(`${u} → ${r.status}`); continue; }
+          return await r.json();
+        }catch(ex){ errs.push(`${u} → ${ex}`); }
+      }
+      throw new Error(errs.join(' | '));
+    }
+
+    (async function init(){
+      document.body.classList.add('loading');
+      try{
+        const [idxJson, docsJson] = await Promise.all([
+          fetchFirstGood(INDEX_CANDIDATES),
+          fetchFirstGood(DOCS_CANDIDATES)
+        ]);
+        idx  = lunr.Index.load(idxJson);
         docs = Array.isArray(docsJson) ? docsJson : (docsJson.docs || []);
         byId = Object.fromEntries(docs.map(d => [String(d.id ?? d.ref ?? d.doc ?? d.i), d]));
-        // first paint: no search yet
-        render([], `Loaded index (${docs.length} docs).`);
-      })
-      .catch(err=>{
-        render([], `Failed to load index/docs — ${err && err.message ? err.message : err}`);
-      });
+        // auto-run any query that was submitted before load finished
+        const msg = `Loaded index (${docs.length} docs).`;
+        if (pending && (pending.q||'').trim()){
+          els.q.value = pending.q;
+          els.or.checked = !!pending.or;
+          const saved = pending; pending = null;
+          const q = buildQuery(saved.q, saved.or);
+          try{
+            const hits = idx.search(q);
+            render(hits.slice(0,200), `${msg} · Auto-searched.`);
+          }catch(e){
+            render([], `${msg} · Query error: ${e && e.message ? e.message : e}`);
+          }
+        } else {
+          render([], msg);
+        }
+      }catch(err){
+        render([], `Failed to load index/docs: ${err && err.message ? err.message : err}`);
+      }
+    })();
   })();
   </script>
 </body>
