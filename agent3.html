@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Agent 3 — Semantic-ready BM25 search</title>
+  <title>Agent 3 — Trust Law (BM25 index)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="brand.css" rel="stylesheet" />
   <style>
@@ -10,135 +10,180 @@
     .bar { display:flex; gap:8px; align-items:center; }
     input[type=text]{ flex:1; padding:10px 12px; border-radius:8px; border:1px solid #333; background:#0d1117; color:#eee; }
     button{ padding:10px 14px; border-radius:8px; border:1px solid #333; background:#1f6feb; color:white; }
-    .meta{ opacity:.7; font-size:.9rem; }
+    button[disabled]{ opacity:.6; cursor:not-allowed; }
+    .meta{ opacity:.75; font-size:.9rem; }
     .hit{ background:#0f1724; border:1px solid #223; border-radius:12px; padding:14px; margin:14px 0; }
     .title{ font-weight:600; }
-    mark{ background: #444; padding:0 .15rem; border-radius:3px; }
-    .grid{ display:grid; grid-template-columns:1fr; gap:10px; }
-    details { background:#0a0f17; border:1px dashed #2a2f3a; border-radius:10px; padding:8px 10px; }
-    summary { cursor:pointer; font-weight:600; }
-    .diag{ opacity:.6; font-size:.85rem; margin-top:10px; }
+    mark{ background:#444; padding:0 .15rem; border-radius:3px; }
+    .diag{ background:#0a0f17; border:1px dashed #2a2f3a; border-radius:10px; padding:10px; margin-top:14px; white-space:pre-wrap; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/lunr@2.3.9/lunr.min.js"></script>
 </head>
 <body>
   <h1>Agent 3 — Trust Law (BM25 index)</h1>
   <div class="bar">
-    <input id="q" type="text" placeholder='e.g., "beddoe consent litigation" or Saunders v Vautier' />
+    <input id="q" type="text" placeholder='beddoe consent litigation, Saunders v Vautier, JTL 1984 s 5, trustee proper law' />
     <label class="meta"><input id="or" type="checkbox"> OR mode</label>
-    <button id="go">Search</button>
+    <button id="go" disabled>Search</button>
   </div>
 
   <p class="meta">Searches <em>all</em> TXT listed in the catalogs on <code>texts.wwwbcb.org</code>. Results are chunk-level BM25 matches with source links. No model inference; no hallucinations.</p>
 
-  <div id="out"></div>
-  <details class="diag"><summary>Diagnostics</summary><pre id="diag"></pre></details>
+  <div id="out" class="meta">Loading index…</div>
+  <div id="diag" class="diag" style="display:none"></div>
 
 <script>
-// locations produced by CI
-const BASE = 'https://texts.wwwbcb.org/data/agent3/';
-const IDX_URL = BASE + 'lunr-index.json';
-const CHUNK_URL = BASE + 'chunks.jsonl';
+const DIAG = document.getElementById('diag');
+const OUT  = document.getElementById('out');
+const GO   = document.getElementById('go');
+const ORCB = document.getElementById('or');
+const Q    = document.getElementById('q');
 
+// Try both locations; use whichever responds
+const CANDIDATES = [
+  'https://texts.wwwbcb.org/data/agent3/',
+  '/data/agent3/'
+];
+
+let BASE = null;
 let idx = null;
-let chunks = new Map(); // id -> chunk
+let chunks = new Map(); // id -> {id,src,title,kind,juris,url,offset,text}
 
-async function loadAll() {
-  const [idxRes, chRes] = await Promise.all([fetch(IDX_URL), fetch(CHUNK_URL)]);
-  if (!idxRes.ok || !chRes.ok) { throw new Error('Index files not found. Run the agent3-bm25 workflow.'); }
-  idx = lunr.Index.load(await idxRes.json());
+function showDiag(s){ DIAG.style.display='block'; DIAG.textContent = String(s); }
+function appendDiag(s){ DIAG.style.display='block'; DIAG.textContent += '\n' + String(s); }
+function esc(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 
-  const dec = new TextDecoder();
-  const reader = chRes.body.getReader();
-  let buf = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) { if (buf.trim()) chunks.set(JSON.parse(buf).id, JSON.parse(buf)); break; }
-    buf += dec.decode(value, { stream: true });
-    let lines = buf.split('\n');
-    buf = lines.pop();
-    for (const line of lines) if (line) chunks.set(JSON.parse(line).id, JSON.parse(line));
+async function headOk(url){
+  try{
+    const res = await fetch(url, { method:'GET', cache:'no-store' });
+    return res.ok;
+  }catch(e){ return false; }
+}
+
+async function pickBase(){
+  for (const base of CANDIDATES){
+    if (await headOk(base + 'lunr-index.json')) return base;
   }
+  return null;
 }
 
-function doSearch(query, orMode=false) {
-  if (!query || !query.trim()) return [];
-  let q = query.trim();
+function clean(s){
+  return s
+    .replace(/^\uFEFF/, '')
+    .replace(/\u00A0/g,' ')
+    .replace(/\u200B/g,'')
+    .replace(/\r\n/g,'\n');
+}
 
-  // quotation handling for phrases
+async function loadIndex(){
+  BASE = await pickBase();
+  if(!BASE){
+    showDiag('Index not found. Run the “agent3-bm25” workflow to generate data/agent3/{lunr-index.json,chunks.jsonl} in Law-Texts-ui, then reload.');
+    OUT.textContent = 'Index not found.';
+    return;
+  }
+
+  showDiag(`Using base: ${BASE}\nFetching index…`);
+  const [idxRes, chRes] = await Promise.all([
+    fetch(BASE + 'lunr-index.json', { cache:'no-store' }),
+    fetch(BASE + 'chunks.jsonl',    { cache:'no-store' })
+  ]);
+
+  if(!idxRes.ok || !chRes.ok){
+    showDiag(`Fetch failed.\nindex: ${idxRes.status}\nchunks: ${chRes.status}`);
+    OUT.textContent = 'Failed to load index.';
+    return;
+  }
+
+  // Avoid streaming (iPad Safari can null body for cross-origin). Read as text.
+  const [idxJson, chunksText] = await Promise.all([idxRes.json(), chRes.text()]);
+  idx = lunr.Index.load(idxJson);
+
+  let n=0;
+  for (const line of chunksText.split('\n')){
+    if(!line.trim()) continue;
+    try{
+      const obj = JSON.parse(line);
+      obj.text = clean(obj.text);
+      chunks.set(obj.id, obj);
+      n++;
+    }catch(e){
+      // skip bad line, but record for debugging
+      appendDiag('Bad JSONL line skipped.');
+    }
+  }
+
+  OUT.textContent = `Index loaded (${n} chunks). Enter a query.`;
+  GO.disabled = false;
+}
+
+function termsFrom(q){
   const terms = [];
-  const phraseRe = /"([^"]+)"/g;
-  let m;
-  while ((m = phraseRe.exec(q))) terms.push({ type:'phrase', v:m[1] });
-  q = q.replace(phraseRe, ' ').trim();
-  for (const t of q.split(/\s+/).filter(Boolean)) terms.push({ type:'term', v:t });
-
-  const clauses = terms.map(t => {
-    if (t.type === 'phrase') return `${t.v}`;
-    return t.v;
-  });
-
-  const final = clauses.map(c => `+${c}`).join(' ');
-  const orQ = clauses.join(' ');
-
-  const results = idx.search(orMode ? orQ : final);
-  return results.map(r => {
-    const c = chunks.get(r.ref);
-    return { score: r.score, ...c };
-  });
+  const ph = /"([^"]+)"/g; let m;
+  while((m = ph.exec(q))) terms.push(m[1]);
+  q = q.replace(ph,' ').trim();
+  for (const t of q.split(/\s+/).filter(Boolean)) terms.push(t);
+  return [...new Set(terms)];
 }
 
-function htmlEscape(s){return s.replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));}
+function search(query, orMode){
+  if(!idx || !query.trim()) return [];
+  const t = termsFrom(query);
+  const clauses = t.map(x=>x);
+  const andQ = clauses.map(c => '+'+c).join(' ');
+  const orQ  = clauses.join(' ');
+  let res = [];
+  try{
+    res = idx.search(orMode ? orQ : andQ);
+  }catch(e){
+    appendDiag('Search parse error: '+e.message);
+    // fall back to OR
+    try { res = idx.search(orQ); } catch(_) {}
+  }
+  return res.map(r => ({ score:r.score, ...chunks.get(r.ref) })).filter(Boolean);
+}
 
-function highlight(snippet, terms){
-  let s = snippet;
-  for (const t of terms.sort((a,b)=>b.length-a.length)) {
-    const re = new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`,'ig');
+function highlight(txt, terms){
+  let s = esc(txt);
+  const sorted = [...terms].sort((a,b)=>b.length-a.length);
+  for (const t of sorted){
+    const re = new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig');
     s = s.replace(re,'<mark>$1</mark>');
   }
   return s;
 }
 
 function render(hits, query){
-  const out = document.getElementById('out');
-  out.innerHTML = '';
-  const terms = Array.from(new Set(query.toLowerCase().match(/"[^"]+"|\S+/g)||[])).map(x=>x.replace(/^"|"$/g,''));
-
-  if (!hits.length) {
-    out.innerHTML = `<p class="meta">No matches in the catalogs.</p>`;
+  const t = termsFrom(query);
+  if(!hits.length){
+    OUT.innerHTML = `<p class="meta">No matches in the catalogs.</p>`;
     return;
   }
-
-  for (const h of hits.slice(0,50)) {
-    const snip = htmlEscape(h.text.slice(0, 550)).replace(/\n/g,' ');
-    const url = h.url;
-    const block = document.createElement('div');
-    block.className = 'hit';
-    block.innerHTML = `
-      <div class="title">${htmlEscape(h.title)} <span class="meta">(${h.kind}; ${h.juris || '—'})</span></div>
-      <div class="meta"><a href="${url}" target="_blank" rel="noopener">open TXT</a></div>
-      <div style="margin-top:8px">${highlight(snip, terms)}</div>
+  const html = hits.slice(0,50).map(h=>{
+    const snip = highlight(h.text.slice(0,600).replace(/\n/g,' '), t);
+    return `
+      <div class="hit">
+        <div class="title">${esc(h.title)} <span class="meta">(${esc(h.kind)}${h.juris?'; '+esc(h.juris):''})</span></div>
+        <div class="meta"><a href="${h.url}" target="_blank" rel="noopener">open TXT</a></div>
+        <div style="margin-top:8px">${snip}</div>
+      </div>
     `;
-    out.appendChild(block);
-  }
+  }).join('');
+  OUT.innerHTML = html;
 }
 
-(async () => {
-  const diag = document.getElementById('diag');
-  diag.textContent = `Loading index from ${IDX_URL}\nChunks: ${CHUNK_URL}`;
-  await loadAll();
-  diag.textContent += `\nLoaded ${chunks.size} chunks. Ready.`;
+GO.addEventListener('click', ()=>{
+  const q = Q.value || '';
+  const hits = search(q, ORCB.checked);
+  render(hits, q);
+});
+Q.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !GO.disabled){ GO.click(); }});
 
-  const q = document.getElementById('q');
-  const go = document.getElementById('go');
-  const or = document.getElementById('or');
-  const run = () => {
-    const hits = doSearch(q.value, or.checked);
-    render(hits, q.value);
-  };
-  go.onclick = run;
-  q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') run(); });
-})();
+// boot
+loadIndex().catch(e=>{
+  showDiag('Loader error: '+e.message);
+  OUT.textContent = 'Failed to load index.';
+});
 </script>
 </body>
 </html>
