@@ -6,7 +6,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # allow pushing to this repo (Law-Tools)
 
     steps:
       - name: Checkout Law-Tools (this repo)
@@ -17,8 +17,7 @@ jobs:
         with:
           node-version: '20'
 
-      # Keep it simple: install lunr directly (no lockfile needed)
-      - name: Install deps
+      - name: Install deps (lunr only)
         run: npm i --no-audit --no-fund lunr@2.3.9
 
       - name: Checkout target repo (Law-Texts-ui)
@@ -28,23 +27,50 @@ jobs:
           path: target
           token: ${{ secrets.TEXTS_RW_TOKEN }}
 
-      - name: Build BM25 index
+      - name: Build BM25 index (write into Law-Texts-ui)
         env:
-          # Give Node a bigger heap for the index build
           NODE_OPTIONS: --max-old-space-size=6144
         run: |
           mkdir -p target/data/agent3
           node scripts/agent3_build.mjs --out target/data/agent3
+          echo "---- OUTPUTS IN Law-Texts-ui ----"
+          ls -lh target/data/agent3 || true
 
-      - name: Commit & push index into Law-Texts-ui
+      - name: Verify outputs exist
+        run: |
+          test -s target/data/agent3/lunr-index.json
+          test -s target/data/agent3/chunks.jsonl
+          echo "Size (lunr-index.json): $(wc -c < target/data/agent3/lunr-index.json) bytes"
+          echo "Size (chunks.jsonl)    : $(wc -c < target/data/agent3/chunks.jsonl) bytes"
+
+      - name: Commit & push to Law-Texts-ui
         run: |
           cd target
           git config user.name  "agent3"
           git config user.email "agent3@users.noreply.github.com"
           git add data/agent3/lunr-index.json data/agent3/chunks.jsonl || true
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No changes to commit for Law-Texts-ui."
           else
             git commit -m "agent3: refresh BM25 index"
+            git push
+          fi
+
+      # Also publish the same files under tools.wwwbcb.org as a fallback
+      - name: Copy fallback into Law-Tools site (this repo)
+        run: |
+          mkdir -p data/agent3
+          cp target/data/agent3/lunr-index.json data/agent3/
+          cp target/data/agent3/chunks.jsonl    data/agent3/
+          echo "---- OUTPUTS IN Law-Tools ----"
+          ls -lh data/agent3 || true
+          git add data/agent3/lunr-index.json data/agent3/chunks.jsonl || true
+
+      - name: Commit & push fallback (Law-Tools)
+        run: |
+          if git diff --cached --quiet; then
+            echo "No fallback changes to commit."
+          else
+            git commit -m "agent3: publish fallback index under tools"
             git push
           fi
