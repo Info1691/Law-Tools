@@ -21,20 +21,73 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
 
-      - name: Checkout target repo (Law-Texts-ui)
+      - name: Checkout target repo
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repo }}
           path: target
           token: ${{ secrets.TEXTS_RW_TOKEN }}
 
-      - name: Normalize TXT
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Normalize TXT (inline script)
+        env:
+          TXT_PATH: ${{ inputs.txt_path }}
         run: |
-          node scripts/normalize.mjs "target/${{ inputs.txt_path }}"
+          set -euo pipefail
+          node - <<'JS'
+          import fs from 'node:fs';
+
+          const p = process.env.TXT_PATH;
+          const f = `target/${p}`;
+          if (!p) { console.error('TXT_PATH missing'); process.exit(2); }
+          if (!fs.existsSync(f)) { console.error(`ERROR: not found: ${f}`); process.exit(2); }
+
+          let text = fs.readFileSync(f, 'utf8');
+
+          // strip BOM
+          text = text.replace(/^\uFEFF/, '');
+
+          // common Unicode fixes
+          const repl = [
+            [/[\u2018\u2019\u201B]/g, "'"],     // curly apostrophes -> '
+            [/[\u201C\u201D\u201E]/g, '"'],    // curly quotes -> "
+            [/\u2013/g, '-'],                  // en dash
+            [/\u2014/g, ' — '],                // em dash with spacing
+            [/\u2026/g, '...'],                // ellipsis
+            [/\u00A0/g, ' '],                  // NBSP
+            [/\u200B/g, ''],                   // zero-width
+            [/\uFFFD/g, ''],                   // replacement char (mojibake)
+            [/\uFB00/g, 'ff'], [/\uFB01/g, 'fi'], [/\uFB02/g, 'fl'],
+            [/\uFB03/g, 'ffi'], [/\uFB04/g, 'ffl']
+          ];
+          for (const [re, to] of repl) text = text.replace(re, to);
+
+          // remove control chars (keep tab/newlines)
+          text = text.replace(/[^\S\r\n\t]?[\u0000-\u0008\u000B-\u001F\u007F]+/g, '');
+
+          // de-hyphenate linebreaks: word-\nword -> wordword
+          text = text.replace(/([A-Za-z])-\r?\n([A-Za-z])/g, '$1$2');
+
+          // normalize whitespace/newlines
+          text = text
+            .replace(/\r\n/g, '\n')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .replace(/[ \t]{2,}/g, ' ')
+            .trim() + '\n';
+
+          fs.writeFileSync(f, text, 'utf8');
+          console.log(`Normalized ${p} ✅`);
+          JS
 
       - name: Commit & push
         working-directory: target
