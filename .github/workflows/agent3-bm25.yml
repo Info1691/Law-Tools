@@ -6,11 +6,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # allow pushing to this repo (Law-Tools)
+      contents: write
 
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,6 +28,7 @@ jobs:
           repository: Info1691/Law-Texts-ui
           path: target
           token: ${{ secrets.TEXTS_RW_TOKEN }}
+          fetch-depth: 0
 
       - name: Build BM25 index (write into Law-Texts-ui)
         env:
@@ -53,11 +56,12 @@ jobs:
             echo "No changes to commit for Law-Texts-ui."
           else
             git commit -m "agent3: refresh BM25 index"
+            git pull --rebase || true
             git push
           fi
 
-      # Also publish the same files under tools.wwwbcb.org as a fallback
-      - name: Copy fallback into Law-Tools site (this repo)
+      # Fallback publish into Law-Tools site too
+      - name: Copy fallback into Law-Tools (this repo)
         run: |
           mkdir -p data/agent3
           cp target/data/agent3/lunr-index.json data/agent3/
@@ -66,11 +70,14 @@ jobs:
           ls -lh data/agent3 || true
           git add data/agent3/lunr-index.json data/agent3/chunks.jsonl || true
 
-      - name: Commit & push fallback (Law-Tools)
+      - name: Configure Git (Law-Tools) & commit fallback
         run: |
+          git config user.name  "agent3"
+          git config user.email "agent3@users.noreply.github.com"
           if git diff --cached --quiet; then
             echo "No fallback changes to commit."
           else
             git commit -m "agent3: publish fallback index under tools"
+            git pull --rebase || true
             git push
           fi
