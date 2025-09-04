@@ -1,0 +1,56 @@
+name: agent3-bm25
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "17 2 * * *"  # nightly
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Law-Tools
+        uses: actions/checkout@v4
+
+      - name: Checkout target (Law-Texts-ui)
+        uses: actions/checkout@v4
+        with:
+          repository: Info1691/Law-Texts-ui
+          path: target
+          token: ${{ secrets.TEXTS_RW_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps (lunr only)
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm install lunr@2.x
+
+      - name: Build BM25 index
+        env:
+          CATALOG_TEXTBOOKS: https://texts.wwwbcb.org/texts/catalog.json
+          CATALOG_LAWS:      https://texts.wwwbcb.org/laws.json
+          CATALOG_RULES:     https://texts.wwwbcb.org/rules.json
+        run: |
+          node scripts/agent3_build.mjs
+
+      - name: Commit & push index into Law-Texts-ui
+        working-directory: target
+        run: |
+          set -e
+          mkdir -p data/agent3
+          cp ../out/lunr-index.json data/agent3/lunr-index.json
+          cp ../out/chunks.jsonl    data/agent3/chunks.jsonl
+          git config user.name  "law-tools-bot"
+          git config user.email "actions@github.com"
+          git add data/agent3/lunr-index.json data/agent3/chunks.jsonl
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Agent3: update BM25 index"
+            git push
+          fi
