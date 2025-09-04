@@ -1,0 +1,50 @@
+name: normalize-one
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Target repo (owner/name)"
+        required: true
+        default: "Info1691/Law-Texts-ui"
+      txt_path:
+        description: "Path to TXT to normalize in target repo"
+        required: true
+        default: "data/textbooks/jersey/litigating-trust-disputes-in-jersey.txt"
+      commit_message:
+        description: "Commit message"
+        required: true
+        default: "Normalize TXT (encoding/whitespace/ligatures)"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Law-Tools (this repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout target repo (Law-Texts-ui)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          path: target
+          token: ${{ secrets.TEXTS_RW_TOKEN }}
+
+      - name: Normalize TXT
+        run: |
+          node scripts/normalize.mjs "target/${{ inputs.txt_path }}"
+
+      - name: Commit & push
+        working-directory: target
+        run: |
+          git config user.name "law-tools-bot"
+          git config user.email "actions@github.com"
+          git add "${{ inputs.txt_path }}"
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "${{ inputs.commit_message }}"
+            git push
+          fi
