@@ -1,0 +1,103 @@
+/* agent3.css — readable, branded Agent 3 results */
+
+:root{
+  --bg:#0e141b;
+  --text:#e8eef6;
+  --muted:#9fb0c4;
+  --card:#121a24;
+  --card-border:#243245;
+  --accent:#3c82f6; /* your blue */
+  --chip:#26364b;
+  --mark-bg:#ffe08a;
+  --mark-fg:#1b1b1b;
+}
+
+html,body{
+  background:var(--bg);
+  color:var(--text);
+  font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;
+  margin:0;
+}
+
+.header{
+  position:sticky;top:0;z-index:10;
+  background:linear-gradient(to right,#0f1720,#0f1720 60%,#0f1720);
+  border-bottom:1px solid var(--card-border);
+}
+.header .wrap{
+  max-width:1100px;margin:0 auto;
+  display:flex;align-items:center;gap:.8rem;
+  padding:.8rem 1rem;
+}
+.header img{height:22px; width:auto;}
+.header .brand{font-weight:600;letter-spacing:.2px}
+.header .brand small{opacity:.7;font-weight:500;margin-left:.5rem}
+
+.main{max-width:1100px;margin:1rem auto 4rem;padding:0 1rem}
+
+.searchbar{
+  display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
+  margin-bottom:.75rem;
+}
+.searchbar input[type="text"]{
+  flex:1 1 520px;min-width:280px;
+  background:var(--card);
+  color:var(--text);
+  border:1px solid var(--card-border);
+  border-radius:8px;
+  padding:.7rem .9rem;
+  outline:none;
+}
+.searchbar input[type="text"]::placeholder{color:#7f91a8}
+.searchbar .btn{
+  background:var(--accent);color:#fff;border:0;border-radius:8px;
+  padding:.7rem 1rem;font-weight:600;cursor:pointer;
+}
+.searchbar label{color:var(--muted);display:flex;align-items:center;gap:.4rem}
+
+.note{color:var(--muted);font-size:.92rem;margin:.5rem 0 1rem}
+
+.results{display:flex;flex-direction:column;gap:.9rem}
+
+/* RESULT CARDS */
+.card{
+  background:var(--card);
+  border:1px solid var(--card-border);
+  border-radius:12px;
+  padding:12px 14px;
+  box-shadow:0 6px 16px rgba(0,0,0,.25);
+  color:var(--text);
+  /* ensure readability even if JS left an opacity somewhere */
+  opacity:1 !important; filter:none !important;
+}
+
+.card .meta{
+  display:flex;gap:.6rem;align-items:center;margin-bottom:.4rem;
+  color:var(--muted);font-size:.9rem
+}
+.meta .pill{
+  background:var(--chip); padding:.2rem .5rem;border-radius:999px;
+  border:1px solid var(--card-border); font-size:.8rem; color:#c8d6e8
+}
+.card .title{font-weight:600}
+.card a.open{
+  color:#fff;background:transparent;border:1px solid var(--accent);
+  padding:.15rem .45rem;border-radius:6px;text-decoration:none
+}
+.card .snippet{white-space:pre-wrap}
+
+/* highlights */
+mark{background:var(--mark-bg);color:var(--mark-fg);padding:0 .15rem;border-radius:3px}
+
+/* diagnostics footer */
+.diagnostics{
+  margin-top:1rem;padding:.6rem .8rem;
+  border:1px dashed var(--card-border);border-radius:10px;color:var(--muted);
+  background:rgba(18,26,36,.55)
+}
+
+/* accessibility tweaks */
+@media (max-width:700px){
+  .header .brand{font-size:.95rem}
+  .card{padding:10px 12px}
+}
