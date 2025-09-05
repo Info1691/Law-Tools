@@ -1,9 +1,7 @@
 name: agent3-bm25
-on:
-  workflow_dispatch: {}
 
-permissions:
-  contents: write
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,17 +10,12 @@ jobs:
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Checkout target repo (Law-Texts-ui)
+      - name: Checkout Law-Texts-ui (target)
         uses: actions/checkout@v4
         with:
           repository: Info1691/Law-Texts-ui
-          ref: main
           path: target
-          fetch-depth: 1
-          persist-credentials: true
           token: ${{ secrets.TEXTS_RW_TOKEN }}
 
       - name: Set git identity for commits
@@ -35,44 +28,29 @@ jobs:
         with:
           node-version: 20
 
-      # install 'lunr' (and any other deps in package.json)
+      # we install lunr locally for the build (no need to change your package.json)
       - name: Install deps (lunr only)
-        run: |
-          set -e
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          else
-            npm install --no-audit --no-fund
-          fi
+        run: npm i lunr@2
 
-      # <<< KEY FIX: point TARGET at the checked-out Law-Texts-ui >>>
       - name: Build BM25 index
         env:
-          TARGET: ${{ github.workspace }}/target
-          OUT:    ${{ github.workspace }}/out
-          NODE_OPTIONS: --max_old_space_size=2048
-        run: |
-          set -euxo pipefail
-          # sanity check: catalog must exist in the target repo
-          test -f "$TARGET/texts/catalog.json"
-          node scripts/agent3_build.mjs
-          ls -l "$OUT"
-          test -f "$OUT/agent3.json"
-          test -f "$OUT/agent3.meta.json"
+          OUT: out
+          BASE: https://texts.wwwbcb.org/
+          CATALOG_PATH: target/texts/catalog.json
+        run: node scripts/agent3_build.mjs
 
       - name: Copy files into Law-Texts-ui/agent3-bm25
         run: |
-          set -e
           mkdir -p target/agent3-bm25
-          cp -f out/* target/agent3-bm25/
+          cp -f out/agent3.json out/agent3.meta.json out/lunr-index.json out/chunks.jsonl target/agent3-bm25/
 
       - name: Commit & push to Law-Texts-ui
         working-directory: target
         run: |
-          if [ -n "$(git status --porcelain agent3-bm25)" ]; then
-            git add agent3-bm25
-            git commit -m "agent3: refresh BM25 index"
-            git push origin main
-          else
+          git add agent3-bm25
+          if git diff --cached --quiet; then
             echo "No changes to commit."
+          else
+            git commit -m "agent3-bm25: refresh index bundle"
+            git push
           fi
