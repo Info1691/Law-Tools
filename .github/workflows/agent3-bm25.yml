@@ -3,29 +3,24 @@ name: agent3-bm25
 on:
   workflow_dispatch: {}
 
-permissions:
-  contents: write
-
-env:
-  GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
-  TARGET_REPO: Info1691/Law-Texts-ui
-  TARGET_PATH: target
-  OUT_PATH: out
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Checkout target repo (Law-Texts-ui)
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.TARGET_REPO }}
-          path: ${{ env.TARGET_PATH }}
-          token: ${{ env.GH_TOKEN }}
+          repository: Info1691/Law-Texts-ui
+          ref: main
+          path: target
+          fetch-depth: 1
+          persist-credentials: true
+          token: ${{ secrets.TEXTS_RW_TOKEN }}
 
       - name: Set git identity for commits
         run: |
@@ -38,22 +33,34 @@ jobs:
           node-version: 20
 
       - name: Install deps (lunr only)
-        run: npm i lunr
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
 
       - name: Build BM25 index
+        env:
+          NODE_OPTIONS: --max_old_space_size=2048
         run: |
-          node scripts/agent3_build.mjs --target ./${{ env.TARGET_PATH }} --out ./${{ env.OUT_PATH }}
-          ls -lah ./${{ env.OUT_PATH }}
+          set -e
+          node scripts/agent3_build.mjs --target ./target --out ./out
+          # sanity check
+          ls -l ./out
+          test -f ./out/agent3.json
+          test -f ./out/agent3.meta.json
 
       - name: Copy files into Law-Texts-ui/agent3-bm25
         run: |
-          mkdir -p ${{ env.TARGET_PATH }}/agent3-bm25
-          cp -f ${{ env.OUT_PATH }}/lunr-index.json  ${{ env.TARGET_PATH }}/agent3-bm25/
-          cp -f ${{ env.OUT_PATH }}/chunks.jsonl     ${{ env.TARGET_PATH }}/agent3-bm25/
+          mkdir -p target/agent3-bm25
+          cp -f out/* target/agent3-bm25/
 
       - name: Commit & push to Law-Texts-ui
-        working-directory: ${{ env.TARGET_PATH }}
+        working-directory: target
         run: |
-          git add agent3-bm25/lunr-index.json agent3-bm25/chunks.jsonl
-          git commit -m "agent3: refresh BM25 index"
-          git push
+          if [ -n "$(git status --porcelain agent3-bm25)" ]; then
+            git add agent3-bm25
+            git commit -m "agent3: refresh BM25 index"
+            git push origin main
+          else
+            echo "No changes to commit."
+          fi
