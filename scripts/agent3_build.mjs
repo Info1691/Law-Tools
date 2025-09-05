@@ -1,169 +1,129 @@
-// Build a chunked text collection and a Lunr index from the live catalogs.
-// Outputs:
-//   lunr-index.json   (Lunr serialized index)
-//   chunks.jsonl      (one JSON object per line with metadata + chunk text)
-//
-// Usage: node scripts/agent3_build.mjs --out <dir>
+// scripts/agent3_build.mjs
+// Build a Lunr index from the TXT catalog(s) in a checked-out Law-Texts-ui repo.
+// Outputs: ./out/lunr-index.json and ./out/chunks.jsonl
 
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import process from 'node:process';
-import lunr from 'lunr';
+import fs from "fs/promises";
+import path from "node:path";
+import lunr from "lunr";
 
-const OUT_ARG = (() => {
-  const i = process.argv.indexOf('--out');
-  return i > -1 ? process.argv[i + 1] : 'data/agent3';
-})();
+const argv = Object.fromEntries(process.argv.slice(2).map(a => {
+  const [k, v] = a.split("=");
+  return [k.replace(/^--/, ""), v ?? "true"];
+}));
 
-const ROOT = 'https://texts.wwwbcb.org';
-const CATALOGS = [
-  `${ROOT}/texts/catalog.json`, // textbooks
-  `${ROOT}/laws.json`,          // laws
-  `${ROOT}/rules.json`,         // rules
-];
+const TARGET = path.resolve(argv.target || "./target");
+const OUTDIR = path.resolve(argv.out || "./out");
 
-const CHUNK = 800;     // characters
-const OVERLAP = 120;   // characters
-
-function resolveUrl(base, maybeRelative) {
-  try { return new URL(maybeRelative, base).href; } catch { return null; }
+// Helpers
+async function readJson(p) {
+  try { return JSON.parse(await fs.readFile(p, "utf8")); }
+  catch { return null; }
+}
+async function exists(p) {
+  try { await fs.access(p); return true; } catch { return false; }
 }
 
-async function ensureDir(p) {
-  await fs.mkdir(p, { recursive: true });
-}
+// Load catalogs (textbooks at texts/catalog.json; try laws.json & rules.json if present)
+async function loadCatalogItems() {
+  const items = [];
 
-function normalizeUtf8(s) {
-  return s
-    .replace(/\r\n?/g, '\n')       // newlines
-    .replace(/\uFEFF/g, '')        // BOM
-    .replace(/[^\S\n]+/g, ' ')     // collapse spaces (except newlines)
-    .replace(/[ \t]+\n/g, '\n');   // trim line ends
-}
+  const textbooks = await readJson(path.join(TARGET, "texts", "catalog.json"));
+  if (Array.isArray(textbooks)) items.push(...textbooks);
 
-function chunkText(txt, size = CHUNK, overlap = OVERLAP) {
-  const chunks = [];
-  let i = 0;
-  while (i < txt.length) {
-    const end = Math.min(txt.length, i + size);
-    chunks.push(txt.slice(i, end));
-    if (end === txt.length) break;
-    i = end - overlap;
-    if (i < 0) i = 0;
+  const laws = await readJson(path.join(TARGET, "laws.json"));
+  if (Array.isArray(laws)) items.push(...laws);
+
+  const rules = await readJson(path.join(TARGET, "rules.json"));
+  if (Array.isArray(rules)) items.push(...rules);
+
+  // Normalise a couple of fields we rely on
+  for (const it of items) {
+    it.title = it.title || it.name || "";
+    it.kind = it.kind || it.category || "";
+    it.jurisdiction = it.jurisdiction || it.juris || "";
+    it.url_txt = it.url_txt || it.url || it.href || "";
   }
-  return chunks;
+  return items.filter(it => typeof it.url_txt === "string" && it.url_txt.length);
 }
 
-async function fetchJson(url) {
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`Fetch ${url} -> ${r.status}`);
-  return await r.json();
+// Resolve a catalog url_txt to a local repo path
+function resolveLocalTxtPath(urlTxt) {
+  // Most entries are relative like "./data/…". Accept several forms.
+  const cleaned = urlTxt.replace(/^\.?\//, "");
+  if (cleaned.startsWith("data/")) return path.join(TARGET, cleaned);
+  // If absolute to texts.wwwbcb.org, strip origin
+  const m = urlTxt.match(/https?:\/\/[^/]+\/(.+)/i);
+  if (m) return path.join(TARGET, m[1]);
+  // Fallback: assume it's already relative to repo root
+  return path.join(TARGET, cleaned);
 }
 
-async function fetchTxt(url) {
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`Fetch ${url} -> ${r.status}`);
-  return await r.text();
-}
-
-function pick(v, k, d='') { return (v && v[k]) ? v[k] : d; }
-
-async function readCatalog(catalogUrl) {
-  const base = new URL(catalogUrl).href;
-  const arr = await fetchJson(catalogUrl);
-  // Expect array of items with url_txt; keep flexible on other keys.
-  return arr
-    .map((it, idx) => {
-      const urlRel = pick(it, 'url_txt', pick(it, 'url', null));
-      const urlTxt = urlRel ? resolveUrl(base, urlRel) : null;
-      return {
-        id: `${path.basename(catalogUrl)}#${idx}`,
-        title: pick(it, 'title', path.basename(urlRel || `item-${idx}`)),
-        kind: pick(it, 'source', pick(it, 'kind', 'text')),
-        jurisdiction: pick(it, 'jurisdiction', ''),
-        urlTxt,
-      };
-    })
-    .filter(x => !!x.urlTxt);
-}
-
-function buildLunr(docs) {
-  return lunr(function () {
-    this.ref('id');
-    this.field('text');
-    this.field('title');
-    this.field('kind');
-    this.field('jurisdiction');
-
-    for (const d of docs) {
-      this.add({
-        id: d.id,
-        text: d.text,
-        title: d.title,
-        kind: d.kind,
-        jurisdiction: d.jurisdiction,
-      });
-    }
-  });
+// Chunk a big string into overlapping windows (good for search)
+function* chunkText(text, size = 900, stride = 700) {
+  const n = text.length;
+  if (n <= size) { yield { start: 0, end: n, text }; return; }
+  for (let i = 0; i < n; i += stride) {
+    const end = Math.min(i + size, n);
+    yield { start: i, end, text: text.slice(i, end) };
+    if (end === n) break;
+  }
 }
 
 async function main() {
-  const outDir = OUT_ARG;
-  await ensureDir(outDir);
+  await fs.mkdir(OUTDIR, { recursive: true });
 
-  // 1) read all catalogs
-  let items = [];
-  for (const c of CATALOGS) {
-    try {
-      const part = await readCatalog(c);
-      items = items.concat(part);
-    } catch (e) {
-      console.error(`Catalog read failed: ${c} -> ${e.message}`);
-    }
+  const items = await loadCatalogItems();
+  if (!items.length) {
+    console.error("No catalog items found. Is TARGET correct? TARGET=", TARGET);
+    process.exit(2);
   }
-  if (!items.length) throw new Error('No catalog entries found.');
 
-  // 2) fetch & chunk
-  const chunks = [];
-  let chunkId = 0;
+  const chunks = []; // {id,title,kind,jurisdiction,url_txt,offset,text}
+  let nextId = 0;
+
+  // Build Lunr
+  const builder = new lunr.Builder();
+  builder.ref("id");
+  builder.field("text");
+  builder.field("title");
+  builder.field("kind");
+  builder.field("jurisdiction");
 
   for (const it of items) {
-    try {
-      const raw = await fetchTxt(it.urlTxt);
-      const norm = normalizeUtf8(raw);
-      const parts = chunkText(norm);
-      for (const p of parts) {
-        chunks.push({
-          id: `c${++chunkId}`,
-          title: it.title,
-          kind: it.kind,
-          jurisdiction: it.jurisdiction,
-          url: it.urlTxt,
-          text: p,
-        });
-      }
-    } catch (e) {
-      console.warn(`Skip ${it.urlTxt} (${it.title}) -> ${e.message}`);
+    const local = resolveLocalTxtPath(it.url_txt);
+    if (!(await exists(local))) continue;
+
+    const raw = await fs.readFile(local, "utf8");
+    for (const c of chunkText(raw)) {
+      const id = String(nextId++);
+      const record = {
+        id,
+        title: it.title,
+        kind: it.kind,
+        jurisdiction: it.jurisdiction,
+        url_txt: it.url_txt,
+        offset: c.start,
+        text: c.text
+      };
+      chunks.push(record);
+      builder.add(record);
     }
   }
 
-  if (!chunks.length) throw new Error('No text chunks created.');
+  const idx = builder.build().toJSON();
 
-  // 3) build Lunr over chunks
-  const idx = buildLunr(chunks);
+  // Write outputs
+  await fs.writeFile(path.join(OUTDIR, "lunr-index.json"), JSON.stringify(idx), "utf8");
 
-  // 4) write outputs
-  const idxPath = path.join(outDir, 'lunr-index.json');
-  const chunksPath = path.join(outDir, 'chunks.jsonl');
+  // JSONL for chunks (stream-friendly)
+  const lines = chunks.map(o => JSON.stringify(o)).join("\n");
+  await fs.writeFile(path.join(OUTDIR, "chunks.jsonl"), lines, "utf8");
 
-  await fs.writeFile(idxPath, JSON.stringify(idx), 'utf8');
-  const lines = chunks.map(o => JSON.stringify(o)).join('\n') + '\n';
-  await fs.writeFile(chunksPath, lines, 'utf8');
-
-  console.log(`Wrote ${idxPath} and ${chunksPath}`);
+  // Small debug message so the action log shows counts
+  console.log(`Built index. docs(chunks)=${chunks.length}`);
 }
 
-main().catch(err => {
-  console.error(err);
+main().catch(e => {
+  console.error(e);
   process.exit(1);
 });
