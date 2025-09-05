@@ -1,17 +1,15 @@
 name: agent3-bm25
-
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
 
-      - name: Checkout Law-Texts-ui (target)
+      - name: Checkout target repo (Law-Texts-ui)
         uses: actions/checkout@v4
         with:
           repository: Info1691/Law-Texts-ui
@@ -28,7 +26,6 @@ jobs:
         with:
           node-version: 20
 
-      # we install lunr locally for the build (no need to change your package.json)
       - name: Install deps (lunr only)
         run: npm i lunr@2
 
@@ -36,7 +33,10 @@ jobs:
         env:
           OUT: out
           BASE: https://texts.wwwbcb.org/
-          CATALOG_PATH: target/texts/catalog.json
+          # Prefer URLs; you can swap to PATHs if you want to read from the checked-out repo:
+          CATALOG_TEXTBOOKS_URL: https://texts.wwwbcb.org/texts/catalog.json
+          CATALOG_LAWS_URL:      https://texts.wwwbcb.org/laws.json
+          CATALOG_RULES_URL:     https://texts.wwwbcb.org/rules.json
         run: node scripts/agent3_build.mjs
 
       - name: Copy files into Law-Texts-ui/agent3-bm25
