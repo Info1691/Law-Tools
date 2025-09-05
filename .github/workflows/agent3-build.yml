@@ -1,0 +1,85 @@
+name: Create agent3 (BM25 index)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  TARGET_REPO: Info1691/Law-Texts-ui
+  TARGET_DIR: agent3-bm25
+  GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Law-Tools (this repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout target repo (Law-Texts-ui)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          token: ${{ env.GH_TOKEN }}
+          path: target
+
+      - name: Set git identity for commits
+        run: |
+          git config --global user.email "ci@texts.wwwbcb.org"
+          git config --global user.name  "Agent3 Builder"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install deps (if package.json exists)
+        run: |
+          if [ -f package-lock.json ] || [ -f package.json ]; then
+            npm ci || npm i
+          fi
+
+      - name: Build BM25 index
+        run: |
+          set -e
+          mkdir -p out
+          # If you already have the builder script in this repo, call it:
+          # (Your repo already showed scripts/agent3_build.mjs in logs.)
+          if [ -f scripts/agent3_build.mjs ]; then
+            node scripts/agent3_build.mjs --out out
+          else
+            echo "ERROR: scripts/agent3_build.mjs not found. Add your builder here." >&2
+            exit 2
+          fi
+          # Find the produced files robustly
+          AGENT_JSON=$(find out -maxdepth 2 -type f -name "agent3.json" | head -n1 || true)
+          META_JSON=$(find out -maxdepth 2 -type f -name "agent3.meta.json" | head -n1 || true)
+          if [ -z "$AGENT_JSON" ] || [ -z "$META_JSON" ]; then
+            echo "ERROR: Could not locate agent3.json and/or agent3.meta.json under ./out" >&2
+            echo "Contents of ./out for debugging:" >&2
+            ls -la out >&2 || true
+            exit 3
+          fi
+          echo "Found: $AGENT_JSON and $META_JSON"
+
+      - name: Copy files into Law-Texts-ui/agent3-bm25
+        run: |
+          set -e
+          mkdir -p "target/${TARGET_DIR}"
+          cp -v "$AGENT_JSON" "target/${TARGET_DIR}/agent3.json"
+          cp -v "$META_JSON"  "target/${TARGET_DIR}/agent3.meta.json"
+          ls -la "target/${TARGET_DIR}"
+
+      - name: Commit & push to Law-Texts-ui
+        working-directory: target
+        run: |
+          set -e
+          git add "${TARGET_DIR}/agent3.json" "${TARGET_DIR}/agent3.meta.json"
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "agent3: publish BM25 index"
+          git push origin main
