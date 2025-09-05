@@ -1,129 +1,196 @@
 // scripts/agent3_build.mjs
-// Build a Lunr index from the TXT catalog(s) in a checked-out Law-Texts-ui repo.
-// Outputs: ./out/lunr-index.json and ./out/chunks.jsonl
+// Build BM25/Lunr index for all TXT listed in Law-Texts-ui/texts/catalog.json
+// Outputs: out/agent3.json (Lunr index), out/agent3.meta.json, out/chunks.jsonl
 
-import fs from "fs/promises";
-import path from "node:path";
-import lunr from "lunr";
+import fs from 'node:fs';
+import path from 'node:path';
+import lunr from 'lunr';
 
-const argv = Object.fromEntries(process.argv.slice(2).map(a => {
-  const [k, v] = a.split("=");
-  return [k.replace(/^--/, ""), v ?? "true"];
-}));
+const TARGET = process.env.TARGET || path.resolve('./target');
+const OUT    = process.env.OUT    || path.resolve('./out');
+const BASE   = 'https://texts.wwwbcb.org/';
 
-const TARGET = path.resolve(argv.target || "./target");
-const OUTDIR = path.resolve(argv.out || "./out");
-
-// Helpers
-async function readJson(p) {
-  try { return JSON.parse(await fs.readFile(p, "utf8")); }
-  catch { return null; }
-}
-async function exists(p) {
-  try { await fs.access(p); return true; } catch { return false; }
-}
-
-// Load catalogs (textbooks at texts/catalog.json; try laws.json & rules.json if present)
-async function loadCatalogItems() {
-  const items = [];
-
-  const textbooks = await readJson(path.join(TARGET, "texts", "catalog.json"));
-  if (Array.isArray(textbooks)) items.push(...textbooks);
-
-  const laws = await readJson(path.join(TARGET, "laws.json"));
-  if (Array.isArray(laws)) items.push(...laws);
-
-  const rules = await readJson(path.join(TARGET, "rules.json"));
-  if (Array.isArray(rules)) items.push(...rules);
-
-  // Normalise a couple of fields we rely on
-  for (const it of items) {
-    it.title = it.title || it.name || "";
-    it.kind = it.kind || it.category || "";
-    it.jurisdiction = it.jurisdiction || it.juris || "";
-    it.url_txt = it.url_txt || it.url || it.href || "";
-  }
-  return items.filter(it => typeof it.url_txt === "string" && it.url_txt.length);
-}
-
-// Resolve a catalog url_txt to a local repo path
-function resolveLocalTxtPath(urlTxt) {
-  // Most entries are relative like "./data/…". Accept several forms.
-  const cleaned = urlTxt.replace(/^\.?\//, "");
-  if (cleaned.startsWith("data/")) return path.join(TARGET, cleaned);
-  // If absolute to texts.wwwbcb.org, strip origin
-  const m = urlTxt.match(/https?:\/\/[^/]+\/(.+)/i);
-  if (m) return path.join(TARGET, m[1]);
-  // Fallback: assume it's already relative to repo root
-  return path.join(TARGET, cleaned);
-}
-
-// Chunk a big string into overlapping windows (good for search)
-function* chunkText(text, size = 900, stride = 700) {
-  const n = text.length;
-  if (n <= size) { yield { start: 0, end: n, text }; return; }
-  for (let i = 0; i < n; i += stride) {
-    const end = Math.min(i + size, n);
-    yield { start: i, end, text: text.slice(i, end) };
-    if (end === n) break;
-  }
-}
-
-async function main() {
-  await fs.mkdir(OUTDIR, { recursive: true });
-
-  const items = await loadCatalogItems();
-  if (!items.length) {
-    console.error("No catalog items found. Is TARGET correct? TARGET=", TARGET);
-    process.exit(2);
-  }
-
-  const chunks = []; // {id,title,kind,jurisdiction,url_txt,offset,text}
-  let nextId = 0;
-
-  // Build Lunr
-  const builder = new lunr.Builder();
-  builder.ref("id");
-  builder.field("text");
-  builder.field("title");
-  builder.field("kind");
-  builder.field("jurisdiction");
-
-  for (const it of items) {
-    const local = resolveLocalTxtPath(it.url_txt);
-    if (!(await exists(local))) continue;
-
-    const raw = await fs.readFile(local, "utf8");
-    for (const c of chunkText(raw)) {
-      const id = String(nextId++);
-      const record = {
-        id,
-        title: it.title,
-        kind: it.kind,
-        jurisdiction: it.jurisdiction,
-        url_txt: it.url_txt,
-        offset: c.start,
-        text: c.text
-      };
-      chunks.push(record);
-      builder.add(record);
-    }
-  }
-
-  const idx = builder.build().toJSON();
-
-  // Write outputs
-  await fs.writeFile(path.join(OUTDIR, "lunr-index.json"), JSON.stringify(idx), "utf8");
-
-  // JSONL for chunks (stream-friendly)
-  const lines = chunks.map(o => JSON.stringify(o)).join("\n");
-  await fs.writeFile(path.join(OUTDIR, "chunks.jsonl"), lines, "utf8");
-
-  // Small debug message so the action log shows counts
-  console.log(`Built index. docs(chunks)=${chunks.length}`);
-}
-
-main().catch(e => {
-  console.error(e);
+await main().catch(err => {
+  console.error(err);
   process.exit(1);
 });
+
+async function main () {
+  ensureDir(OUT);
+
+  const catalogPath = path.join(TARGET, 'texts', 'catalog.json');
+  assertFile(catalogPath, 'catalog.json not found; did you checkout Law-Texts-ui to ./target ?');
+
+  const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  const items = flattenCatalog(catalog);
+
+  const {docs, byDoc} = await fetchAndChunk(items);
+  console.log(`Built index. docs(chunks)=${docs.length}`);
+
+  // Build Lunr index
+  const idx = lunr(function () {
+    this.ref('id');
+    this.field('text');
+    this.field('title');
+    this.field('kind');
+    this.field('jurisdiction');
+
+    // Slightly boost title/kind/jurisdiction
+    this.field('title', { boost: 3 });
+    this.field('kind', { boost: 1.5 });
+    this.field('jurisdiction', { boost: 1.5 });
+
+    docs.forEach(d => this.add(d));
+  });
+
+  // Write expected filenames
+  const outIndex = path.join(OUT, 'agent3.json');
+  fs.writeFileSync(outIndex, JSON.stringify(idx), 'utf8');
+
+  const outChunks = path.join(OUT, 'chunks.jsonl');
+  const chunkStream = fs.createWriteStream(outChunks, 'utf8');
+  for (const d of docs) {
+    // Keep only what the UI needs at display time
+    const line = JSON.stringify({
+      id: d.id,
+      url: d.url,
+      title: d.title,
+      kind: d.kind,
+      jurisdiction: d.jurisdiction,
+      text: d.text
+    }) + '\n';
+    chunkStream.write(line);
+  }
+  await finished(chunkStream);
+
+  const meta = {
+    builtAt: new Date().toISOString(),
+    base: BASE,
+    catalogItems: items.length,
+    chunkCount: docs.length,
+    docs: Object.keys(byDoc).length,
+    engine: 'lunr-2.3.9',
+    source: 'Law-Tools/scripts/agent3_build.mjs'
+  };
+  fs.writeFileSync(path.join(OUT, 'agent3.meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+}
+
+// ---------- helpers ----------
+
+function ensureDir(p) {
+  fs.mkdirSync(p, { recursive: true });
+}
+
+function assertFile(p, msg) {
+  if (!fs.existsSync(p)) {
+    throw new Error(`${msg} (${p})`);
+  }
+}
+
+function flattenCatalog(catalog) {
+  const take = (arr, kind) =>
+    (Array.isArray(arr) ? arr : []).map(x => ({ ...x, kind }));
+
+  const all = [
+    ...take(catalog.textbooks, 'textbook'),
+    ...take(catalog.laws,      'law'),
+    ...take(catalog.rules,     'rule')
+  ];
+
+  // Keep only items that have a url_txt
+  return all.filter(x => !!x.url_txt);
+}
+
+function resolveTxtUrl(url_txt) {
+  if (/^https?:\/\//i.test(url_txt)) return url_txt;
+  // Resolve relative catalog entries against texts.wwwbcb.org root
+  return new URL(url_txt.replace(/^\.?\//, ''), BASE).toString();
+}
+
+async function fetchAndChunk(items) {
+  const docs = [];
+  const byDoc = Object.create(null);
+
+  // Simple concurrency
+  const queue = items.map((item, i) => async () => {
+    const url = resolveTxtUrl(item.url_txt);
+    const title = item.title || '(untitled)';
+    const jurisdiction = item.jurisdiction || '';
+
+    let txt = '';
+    try {
+      const r = await fetch(url, { redirect: 'follow' });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      txt = await r.text();
+    } catch (e) {
+      console.warn(`Fetch failed for ${url} — ${String(e)}`);
+      txt = ''; // still include a tiny stub so catalog positions line up
+    }
+
+    const chunks = makeChunks(txt, 600, 180); // size ~600 chars, overlap ~180
+    const docId = `d${i}`;
+
+    byDoc[docId] = { url, title, jurisdiction, kind: item.kind };
+
+    chunks.forEach((text, j) => {
+      const id = `${docId}_c${j}`;
+      docs.push({
+        id,
+        text,
+        title,
+        kind: item.kind,
+        jurisdiction,
+        url
+      });
+    });
+  });
+
+  // Run with limited parallelism
+  await pAll(queue, 8);
+  return { docs, byDoc };
+}
+
+function makeChunks(txt, size, overlap) {
+  const out = [];
+  const clean = txt.replace(/\r/g, '').replace(/\t/g, ' ').replace(/[ ]{2,}/g, ' ');
+  // Prefer paragraph splits; then window if long
+  const paras = clean.split(/\n{2,}/g).map(s => s.trim()).filter(Boolean);
+
+  for (const p of paras) {
+    if (p.length <= size) {
+      out.push(p);
+      continue;
+    }
+    // sliding window with overlap
+    let start = 0;
+    while (start < p.length) {
+      const end = Math.min(start + size, p.length);
+      out.push(p.slice(start, end));
+      if (end === p.length) break;
+      start = end - overlap;
+      if (start < 0) start = 0;
+    }
+  }
+  return out;
+}
+
+async function pAll(tasks, concurrency = 8) {
+  const q = tasks.slice();
+  const workers = Array.from({ length: concurrency }, () => worker());
+  await Promise.all(workers);
+
+  async function worker() {
+    while (q.length) {
+      const fn = q.shift();
+      try { await fn(); } catch (e) { console.warn(e); }
+    }
+  }
+}
+
+function finished(stream) {
+  return new Promise((res, rej) => {
+    stream.on('finish', res);
+    stream.on('error', rej);
+    stream.end();
+  });
+}
