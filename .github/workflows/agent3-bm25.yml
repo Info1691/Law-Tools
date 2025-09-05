@@ -1,5 +1,4 @@
 name: agent3-bm25
-
 on:
   workflow_dispatch: {}
 
@@ -36,8 +35,7 @@ jobs:
         with:
           node-version: 20
 
-      # <-- THIS is the fix: use npm ci only when a lockfile exists,
-      # otherwise fall back to npm install so lunr is available.
+      # install 'lunr' (and any other deps in package.json)
       - name: Install deps (lunr only)
         run: |
           set -e
@@ -47,19 +45,24 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
+      # <<< KEY FIX: point TARGET at the checked-out Law-Texts-ui >>>
       - name: Build BM25 index
         env:
+          TARGET: ${{ github.workspace }}/target
+          OUT:    ${{ github.workspace }}/out
           NODE_OPTIONS: --max_old_space_size=2048
         run: |
-          set -e
-          node scripts/agent3_build.mjs --target ./target --out ./out
-          echo "Built files:"
-          ls -l ./out
-          test -f ./out/agent3.json
-          test -f ./out/agent3.meta.json
+          set -euxo pipefail
+          # sanity check: catalog must exist in the target repo
+          test -f "$TARGET/texts/catalog.json"
+          node scripts/agent3_build.mjs
+          ls -l "$OUT"
+          test -f "$OUT/agent3.json"
+          test -f "$OUT/agent3.meta.json"
 
       - name: Copy files into Law-Texts-ui/agent3-bm25
         run: |
+          set -e
           mkdir -p target/agent3-bm25
           cp -f out/* target/agent3-bm25/
 
