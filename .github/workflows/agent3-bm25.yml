@@ -1,6 +1,19 @@
 name: agent3-bm25
+
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  # Where the four output files will be copied in Law-Texts-ui
+  DEST_DIR: agent3-bm25
+  # The three catalogs the index must read
+  CATALOGS: |
+    https://texts.wwwbcb.org/texts/catalog.json
+    https://texts.wwwbcb.org/laws.json
+    https://texts.wwwbcb.org/rules.json
 
 jobs:
   build:
@@ -13,12 +26,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Info1691/Law-Texts-ui
-          path: target
           token: ${{ secrets.TEXTS_RW_TOKEN }}
+          path: target
 
       - name: Set git identity for commits
         run: |
-          git config --global user.name  "Agent3"
+          git config --global user.name "Agent3"
           git config --global user.email "agent3@users.noreply.github.com"
 
       - name: Setup Node.js
@@ -27,30 +40,37 @@ jobs:
           node-version: 20
 
       - name: Install deps (lunr only)
-        run: npm i lunr@2
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm install lunr@2.3.9
 
       - name: Build BM25 index
         env:
-          OUT: out
-          BASE: https://texts.wwwbcb.org/
-          # Prefer URLs; you can swap to PATHs if you want to read from the checked-out repo:
-          CATALOG_TEXTBOOKS_URL: https://texts.wwwbcb.org/texts/catalog.json
-          CATALOG_LAWS_URL:      https://texts.wwwbcb.org/laws.json
-          CATALOG_RULES_URL:     https://texts.wwwbcb.org/rules.json
-        run: node scripts/agent3_build.mjs
-
-      - name: Copy files into Law-Texts-ui/agent3-bm25
+          CATALOGS: ${{ env.CATALOGS }}
         run: |
-          mkdir -p target/agent3-bm25
-          cp -f out/agent3.json out/agent3.meta.json out/lunr-index.json out/chunks.jsonl target/agent3-bm25/
+          set -euxo pipefail
+          mkdir -p out
+          node scripts/agent3_build.mjs --out ./out --catalogs "$CATALOGS"
+
+          # sanity checks
+          test -f ./out/agent3.json
+          test -f ./out/agent3.meta.json
+          test -f ./out/lunr-index.json
+          test -f ./out/chunks.jsonl
+
+          echo "Built index:"
+          jq '. | {catalogItems, docs, chunkCount}' ./out/agent3.meta.json
+
+      - name: Copy files into Law-Texts-ui/${{ env.DEST_DIR }}
+        run: |
+          set -eux
+          mkdir -p target/${{ env.DEST_DIR }}
+          cp -f out/agent3.json out/agent3.meta.json out/lunr-index.json out/chunks.jsonl target/${{ env.DEST_DIR }}/
 
       - name: Commit & push to Law-Texts-ui
         working-directory: target
         run: |
-          git add agent3-bm25
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "agent3-bm25: refresh index bundle"
-            git push
-          fi
+          set -eux
+          git add ${{ env.DEST_DIR }}/agent3.json ${{ env.DEST_DIR }}/agent3.meta.json ${{ env.DEST_DIR }}/lunr-index.json ${{ env.DEST_DIR }}/chunks.jsonl
+          git commit -m "agent3: refresh BM25 index" || echo "Nothing to commit"
+          git push
