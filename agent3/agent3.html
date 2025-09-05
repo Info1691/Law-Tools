@@ -1,0 +1,52 @@
+<script>
+(async () => {
+  const diag = (m) => {
+    const d = document.getElementById('diag') || (() => {
+      const el = document.createElement('div');
+      el.id = 'diag'; el.style.opacity = '0.7'; el.style.fontSize='12px';
+      el.style.marginTop='8px'; document.body.appendChild(el); return el;
+    })();
+    d.textContent = m;
+  };
+
+  // Allow manual override via ?index=…
+  const urlParam = new URLSearchParams(location.search).get('index');
+
+  // Preferred locations (texts first, then tools)
+  const CANDIDATES = urlParam ? [urlParam]
+    : [
+        'https://texts.wwwbcb.org/agent3-bm25/agent3.json',
+        'https://tools.wwwbcb.org/agent3-bm25/agent3.json'
+      ];
+
+  // Try each until one returns OK JSON
+  let indexUrl = null, lastErr = null;
+  for (const u of CANDIDATES) {
+    try {
+      const r = await fetch(u, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await r.clone().json(); // sanity check it’s JSON
+      indexUrl = u;
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  if (!indexUrl) {
+    diag(`Index not found. Last error: ${lastErr}`);
+    return;
+  }
+
+  diag(`Loaded index: ${indexUrl}`);
+
+  // Hand your search bootstrap the chosen URL
+  window.AGENT3_INDEX_URL = indexUrl;
+
+  // Now load the actual app (your existing bundle)
+  const s = document.createElement('script');
+  s.src = './agent3.js'; // keep your existing filename
+  s.defer = true;
+  document.body.appendChild(s);
+})();
+</script>
