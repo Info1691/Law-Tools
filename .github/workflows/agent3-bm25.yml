@@ -3,9 +3,13 @@ name: agent3-bm25
 on:
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
@@ -32,10 +36,15 @@ jobs:
         with:
           node-version: 20
 
+      # <-- THIS is the fix: use npm ci only when a lockfile exists,
+      # otherwise fall back to npm install so lunr is available.
       - name: Install deps (lunr only)
         run: |
-          if [ -f package.json ]; then
-            npm ci
+          set -e
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
           fi
 
       - name: Build BM25 index
@@ -44,7 +53,7 @@ jobs:
         run: |
           set -e
           node scripts/agent3_build.mjs --target ./target --out ./out
-          # sanity check
+          echo "Built files:"
           ls -l ./out
           test -f ./out/agent3.json
           test -f ./out/agent3.meta.json
