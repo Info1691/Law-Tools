@@ -2,13 +2,14 @@
   "name": "law-tools",
   "private": true,
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tools for Law-Texts and Law-Index maintenance",
   "scripts": {
-    "catalog-sync": "node scripts/catalog-sync.mjs"
+    "catalog-sync": "node scripts/catalog-sync.mjs",
+    "agent3:build": "node scripts/agent3_build.mjs --target ./target --out ./out"
   },
   "dependencies": {
-    "@octokit/rest": "^20.1.1",
+    "@octokit/rest": "^20.1.0",
     "lunr": "^2.3.9"
   }
 }
