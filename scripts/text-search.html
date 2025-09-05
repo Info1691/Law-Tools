@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Texts — Quick Search</title>
+  <meta name="color-scheme" content="dark light" />
+
+  <style>
+    :root { --bg:#0b0f17; --card:#111725; --ink:#e7edf6; --muted:#aab6c8; --accent:#3b82f6; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial; }
+    header { background:#0f1b2f; border-bottom:1px solid #16233a; padding:14px 18px; display:flex; align-items:center; gap:12px; }
+    header h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:.2px; }
+    main { max-width:1000px; margin:24px auto; padding:0 16px 48px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .input { flex:1; background:#0d1320; border:1px solid #22304d; border-radius:8px; padding:10px 12px; color:var(--ink); outline:none; }
+    .btn { border:1px solid #29426d; background:#13213a; color:#eaf1ff; padding:10px 14px; border-radius:8px; cursor:pointer; }
+    .btn:hover { background:#182a4a; }
+    .muted { color:var(--muted); font-size:13px; margin-top:8px; }
+    .card { background:var(--card); border:1px solid #1a2335; border-radius:10px; padding:12px 14px; margin-top:12px; }
+    .snippet { white-space:pre-wrap; word-break:break-word; margin-top:6px; }
+    mark { background:#fde04733; padding:0 .2em; border-radius:2px; }
+    a { color:#93c5fd; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
+
+  <!-- Lunr (index reader) -->
+  <script src="https://cdn.jsdelivr.net/npm/lunr/lunr.min.js"></script>
+
+  <!-- Client-side citation linker (neutral cites, A v B, Re X) -->
+  <script src="/scripts/citation-spotter.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Texts — Quick Search</h1>
+  </header>
+
+  <main>
+    <div class="row">
+      <input id="q" class="input" type="text" placeholder="Search textbooks (e.g., Beddoe consent litigation)" />
+      <button id="go" class="btn">Search</button>
+      <label style="display:flex;align-items:center;gap:.5rem;color:var(--muted);font-size:13px;">
+        <input id="orMode" type="checkbox" /> OR mode
+      </label>
+    </div>
+    <div class="muted" id="diag">Index loading…</div>
+
+    <div id="results"></div>
+  </main>
+
+  <script>
+    // Where Agent 3 outputs are published (from Law-Texts-ui)
+    const TEXTS_BASE = "https://texts.wwwbcb.org/agent3-bm25";
+    const URL_META   = `${TEXTS_BASE}/agent3.meta.json`;
+    const URL_LUNR   = `${TEXTS_BASE}/lunr-index.json`;
+    const URL_CHUNKS = `${TEXTS_BASE}/chunks.jsonl`;
+
+    let idx = null, chunks=[], byId=new Map(), meta=null;
+
+    const $ = s=>document.querySelector(s);
+    const elQ=$("#q"), elGo=$("#go"), elDiag=$("#diag"), elOut=$("#results"), elOr=$("#orMode");
+
+    function esc(s){ return (s||"").replace(/[&<>]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+    async function fetchJSON(u){ const r=await fetch(u,{cache:"no-store"}); if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
+    async function fetchChunks(u){
+      const r=await fetch(u,{cache:"no-store"}); if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const t=await r.text(); const out=[];
+      t.split(/\r?\n/).forEach(L=>{ const s=L.trim(); if(!s) return; try{ out.push(JSON.parse(s)); }catch{} });
+      return out;
+    }
+
+    function snippet(txt, terms, span=180){
+      if(!txt) return "";
+      const low=txt.toLowerCase();
+      let p=-1; for(const t of terms){ const i=low.indexOf(t.toLowerCase()); if(i>=0 && (p===-1||i<p)) p=i; }
+      if(p<0) p=0;
+      const start=Math.max(0,p-60), end=Math.min(txt.length,start+span);
+      let s=txt.slice(start,end);
+      terms.forEach(t=>{
+        if(!t) return;
+        const re=new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"gi");
+        s=s.replace(re,m=>`<mark>${esc(m)}</mark>`);
+      });
+      return (start>0?"…":"")+esc(s).replace(/&lt;mark&gt;|&lt;\/mark&gt;/g, m=>m==="&lt;mark&gt;"?"<mark>":"</mark>")+(end<txt.length?"…":"");
+    }
+
+    function ANDquery(q){
+      const toks=q.split(/\s+/).filter(Boolean);
+      return toks.map(t=>`+${t}`).join(" ");
+    }
+
+    function render(hits, terms){
+      elOut.innerHTML="";
+      if(!hits.length){
+        elOut.innerHTML = `<div class="card">No results in textbooks.</div>`;
+        elDiag.textContent="Done.";
+        return;
+      }
+      for(const h of hits.slice(0,100)){
+        const rec = byId.get(h.ref);
+        if(!rec) continue;
+        const card = document.createElement("div");
+        card.className = "card result";
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+            <strong>${esc(rec.title || "Untitled")}</strong>
+            <a href="${rec.url}" target="_blank" rel="noopener">open TXT</a>
+          </div>
+          <div class="snippet result-snippet">${snippet(rec.text, terms)}</div>
+        `;
+        elOut.appendChild(card);
+      }
+      // citation-spotter.js will auto-annotate inside .result-snippet
+      elDiag.textContent=`Done. ${hits.length} match(es).`;
+    }
+
+    async function run(){
+      const q = elQ.value.trim();
+      if(!q){ elDiag.textContent="Enter a query."; elOut.innerHTML=""; return; }
+      if(!idx){ elDiag.textContent="Index not ready yet."; return; }
+
+      let query = elOr.checked ? q : ANDquery(q);
+      elDiag.textContent = `Searching… (${elOr.checked ? "OR" : "AND"} mode)`;
+
+      let hits=[];
+      try { hits = idx.search(query); }
+      catch {
+        // fallback to plain OR on invalid syntax
+        hits = idx.search(q);
+      }
+      render(hits, q.split(/\s+/).filter(Boolean));
+    }
+
+    (async()=>{
+      try {
+        meta = await fetchJSON(URL_META);  // confirms docs & chunkCount available
+        const [L, C] = await Promise.all([ fetchJSON(URL_LUNR), fetchChunks(URL_CHUNKS) ]);
+        idx = lunr.Index.load(L);
+        chunks = C; byId.clear(); chunks.forEach(o=>byId.set(o.id, o));
+        elDiag.textContent = `Index loaded. ${meta.docs ?? "?"} docs, ${meta.chunkCount ?? "?"} chunks.`;
+      } catch(e) {
+        elDiag.textContent = `Failed to load index: ${e.message}`;
+      }
+    })();
+
+    elGo.addEventListener("click", run);
+    elQ.addEventListener("keydown", e=>{ if(e.key==="Enter") run(); });
+  </script>
+</body>
+</html>
