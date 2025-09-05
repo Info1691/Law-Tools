@@ -1,218 +1,218 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Agent 3 — Trust Law (BM25 index)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="icon" href="logo.png">
-  <link rel="stylesheet" href="brand.css">
-  <link rel="stylesheet" href="agent3.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Agent 3 — BM25 Index Search</title>
+
   <style>
-    /* light touch: ensure visible even if some old CSS lingers */
-    .card{opacity:1!important;filter:none!important}
+    :root { --bg:#0b0f17; --card:#111725; --ink:#e7edf6; --muted:#aab6c8; --accent:#3b82f6; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+    header { background:#0f1b2f; border-bottom:1px solid #16233a; padding:14px 18px; display:flex; gap:12px; align-items:center; }
+    header h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:.2px; }
+    main { max-width:1100px; margin:24px auto; padding:0 16px 48px; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+    .searchbar { background:var(--card); border:1px solid #1a2335; border-radius:10px; padding:12px; display:flex; gap:10px; align-items:center; }
+    .searchbar input[type="text"] { flex:1; background:#0d1320; border:1px solid #22304d; border-radius:8px; padding:10px 12px; color:var(--ink); outline:none; }
+    .btn { appearance:none; border:1px solid #29426d; background:#13213a; color:#eaf1ff; padding:10px 14px; border-radius:8px; cursor:pointer; }
+    .btn:hover { background:#182a4a; }
+    label { color:var(--muted); display:flex; align-items:center; gap:6px; user-select:none; }
+    .diag { margin-top:10px; color:var(--muted); font-size:13px; }
+    .counts { margin-left:auto; color:var(--muted); font-size:13px; }
+    .grid { display:grid; grid-template-columns:1fr; gap:12px; margin-top:16px; }
+    .card { background:var(--card); border:1px solid #1a2335; border-radius:10px; padding:12px 14px; }
+    .card h3 { margin:0 0 6px 0; font-size:15px; }
+    .meta { color:var(--muted); font-size:12px; display:flex; gap:12px; flex-wrap:wrap; }
+    .snippet { margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+    mark { background:#fde04733; padding:0 .2em; border-radius:2px; }
+    .nores { margin-top:12px; color:#fca5a5; }
+    .links { margin-top:8px; display:flex; gap:10px; flex-wrap:wrap; }
+    a { color:#93c5fd; text-decoration:none; }
+    a:hover { text-decoration:underline; }
   </style>
+
+  <!-- Lunr (for loading the serialized index) -->
+  <script src="https://cdn.jsdelivr.net/npm/lunr/lunr.min.js"></script>
+
+  <!-- Rule 10 include: client-side citation linker (highlights “Saunders v Vautier”, neutral cites, etc.) -->
+  <script src="/scripts/citation-spotter.js" defer></script>
 </head>
 <body>
-  <header class="header">
-    <div class="wrap">
-      <img src="logo.png" alt="WWBCB">
-      <div class="brand">Agent 3 — Trust Law <small>(BM25 index)</small></div>
-    </div>
+  <header>
+    <h1>Agent 3 — BM25 / Lunr Search</h1>
+    <span class="counts" id="counts">index: …</span>
   </header>
 
-  <main class="main">
-    <form class="searchbar" id="searchForm">
-      <input id="q" type="text"
-             placeholder="e.g., beddoe consent litigation, Saunders v Vautier, JTL 1984 s 5, trustee proper law">
-      <label title="Return results if ANY term matches">
-        <input id="orMode" type="checkbox"> OR mode
-      </label>
-      <button class="btn" type="submit">Search</button>
-    </form>
+  <main>
+    <div class="searchbar row">
+      <input id="q" type="text" placeholder="Try: beddoe consent litigation  •  or  •  Saunders v Vautier  •  Trusts (Jersey) Law 1984" />
+      <button class="btn" id="go">Search</button>
+      <label><input type="checkbox" id="orMode" /> OR mode</label>
+    </div>
+    <div class="diag" id="diag">Index loading…</div>
 
-    <p class="note">
-      Searches <strong>all TXT</strong> listed in the catalogs on <em>texts.wwwbcb.org</em>. Results are chunk-level
-      BM25/Lunr matches with source links. No model inference; no hallucinations.
-    </p>
-
-    <div id="results" class="results"></div>
-    <div id="diag" class="diagnostics" style="display:none"></div>
+    <div class="grid" id="results"></div>
   </main>
 
-  <script src="https://unpkg.com/lunr@2.3.9/lunr.min.js"></script>
   <script>
-  (function(){
-    // ---------- CONFIG / FALLBACKS ----------
-    const INDEX_CANDIDATES = [
-      'https://texts.wwwbcb.org/agent3-bm25/agent3.json',
-      'https://texts.wwwbcb.org/agent3/agent3.json'
-    ];
-    const DOCS_CANDIDATES = [
-      'https://texts.wwwbcb.org/agent3-bm25/docs.json',
-      'https://texts.wwwbcb.org/agent3/docs.json'
-    ];
+    // ===== Configuration =====
+    const TEXTS_BASE = "https://texts.wwwbcb.org/agent3-bm25"; // where agent3 outputs live
+    const URL_META   = `${TEXTS_BASE}/agent3.meta.json`;
+    const URL_LUNR   = `${TEXTS_BASE}/lunr-index.json`;
+    const URL_CHUNKS = `${TEXTS_BASE}/chunks.jsonl`;
 
-    const els = {
-      form: document.getElementById('searchForm'),
-      q:    document.getElementById('q'),
-      or:   document.getElementById('orMode'),
-      out:  document.getElementById('results'),
-      diag: document.getElementById('diag')
-    };
+    // ===== State =====
+    let lunrIndex = null;
+    let chunks = [];              // array of { id, url, title, text }
+    let byId   = new Map();       // id -> record
+    let meta   = null;
 
-    let idx = null;                 // lunr.Index
-    let docs = [];                  // [{id,title,kind,jurisdiction,text,url}]
-    let byId = Object.create(null);
-    let pending = null;             // {q, or} to auto-run when ready
+    const $ = sel => document.querySelector(sel);
+    const elQ     = $("#q");
+    const elGo    = $("#go");
+    const elDiag  = $("#diag");
+    const elOut   = $("#results");
+    const elCounts= $("#counts");
+    const elOr    = $("#orMode");
 
-    // ------------- helpers -------------
-    const esc = s => (s+'')
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    // ===== Helpers =====
+    function setDiag(msg){ elDiag.textContent = msg || ""; }
+    function esc(s){ return (s||"").replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
 
-    function mark(txt, terms){
-      let out = esc(txt);
-      for (const t of terms){
-        if(!t) continue;
-        const safe = t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-        out = out.replace(new RegExp(`(${safe})`,'gi'), '<mark>$1</mark>');
+    async function fetchJSON(url){
+      const r = await fetch(url, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+      return r.json();
+    }
+    async function fetchChunks(url){
+      const r = await fetch(url, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+      const text = await r.text();
+      const out = [];
+      for (const line of text.split(/\r?\n/)) {
+        const L = line.trim(); if(!L) continue;
+        try {
+          const obj = JSON.parse(L);
+          out.push(obj);
+        } catch { /* skip */ }
       }
       return out;
     }
 
-    function snippet(full, terms, radius=560){
-      if (!full) return '';
-      const lower = full.toLowerCase();
+    function makeSnippet(txt, terms, span=160){
+      if(!txt) return "";
+      const low = txt.toLowerCase();
       let pos = -1;
-      for (const t of terms){
-        if(!t) continue;
-        const p = lower.indexOf(t.toLowerCase());
-        if (p >= 0 && (pos < 0 || p < pos)) pos = p;
+      for(const t of terms){
+        const p = low.indexOf(t.toLowerCase());
+        if(p >= 0 && (pos === -1 || p < pos)) pos = p;
       }
-      if (pos < 0) pos = 0;
-      let start = Math.max(0, pos - Math.floor(radius/2));
-      let end   = Math.min(full.length, start + radius);
-      if (end - start < radius && start > 0) start = Math.max(0, end - radius);
-      const slice = full.slice(start, end);
-      return (start>0?'…':'') + mark(slice, terms) + (end<full.length?'…':'');
+      if(pos === -1) pos = 0;
+      const start = Math.max(0, pos - Math.floor(span/3));
+      const end   = Math.min(txt.length, start + span);
+      let slice = txt.slice(start, end);
+
+      // highlight
+      terms.forEach(t=>{
+        if(!t) return;
+        const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"), "gi");
+        slice = slice.replace(re, m=>`<mark>${esc(m)}</mark>`);
+      });
+
+      return (start>0?"…":"") + esc(slice).replace(/&lt;mark&gt;|&lt;\/mark&gt;/g, m => m==="&lt;mark&gt;"?"<mark>":"</mark>") + (end<txt.length?"…":"");
     }
 
-    function cardHTML(hit){
-      const d = byId[hit.ref] || {};
-      const title = d.title || 'Untitled';
-      const kind  = d.kind || 'textbook';
-      const jur   = d.jurisdiction || '';
-      const url   = d.url || d.href || '#';
-      const text  = d.text || '';
-      const terms = (els.q.value||'').trim().split(/\s+/).filter(Boolean);
-      const snip  = snippet(text, terms, 560);
-      return `
-        <article class="card">
-          <div class="meta">
-            <span class="pill">${esc(kind)}</span>
-            ${jur?`<span class="pill">${esc(jur)}</span>`:''}
-            <a class="open" href="${esc(url)}" target="_blank" rel="noopener">open&nbsp;TXT</a>
-          </div>
-          <div class="title">${esc(title)}</div>
-          <div class="snippet">${snip}</div>
-        </article>`;
-    }
-
-    function render(results, diagText){
-      const list = Array.isArray(results) ? results : [];
-      if (list.length === 0){
-        els.out.innerHTML = `<article class="card"><div class="snippet">No matches.</div></article>`;
-      } else {
-        els.out.innerHTML = list.map(cardHTML).join('');
-      }
-      els.out.querySelectorAll('.card').forEach(el => { el.style.opacity=1; el.style.filter='none'; });
-
-      if (diagText){
-        els.diag.style.display='block';
-        els.diag.textContent = diagText;
-      } else {
-        els.diag.style.display='none';
-        els.diag.textContent = '';
-      }
-      document.body.classList.remove('loading');
-    }
-
-    function buildQuery(raw, orMode){
-      raw = (raw||'').trim();
-      if (!raw) return '';
-      const parts = raw.split(/\s+/).filter(Boolean);
-      return orMode ? parts.join(' ') : parts.map(t => (t.startsWith('+')?t:`+${t}`)).join(' ');
-    }
-
-    function doSearch(ev){
-      if (ev) ev.preventDefault();
-      const raw = els.q.value || '';
-      const or  = !!els.or.checked;
-      if (!idx){
-        pending = { q: raw, or };
-        render([], 'Index loading…');
+    function renderHits(hits, terms){
+      elOut.innerHTML = "";
+      if(!hits.length){
+        const div = document.createElement("div");
+        div.className = "nores";
+        div.textContent = "No matches in the indexed documents.";
+        elOut.appendChild(div);
         return;
       }
-      const q = buildQuery(raw, or);
-      if (!q){ render([], 'Enter one or more terms.'); return; }
-      let hits = [];
-      try { hits = idx.search(q); }
-      catch(e){ render([], `Query error: ${e && e.message ? e.message : e}`); return; }
-      const diag = `Docs: ${docs.length} · Query: ${raw} · OR=${or} · Hits: ${hits.length}`;
-      render(hits.slice(0, 200), diag);
+      for(const h of hits){
+        const rec = byId.get(h.ref) || byId.get(h.ref.toString());
+        if(!rec) continue;
+        const card = document.createElement("div");
+        card.className = "card result";
+        const title = esc(rec.title || "Untitled");
+        const url = rec.url || "#";
+        card.innerHTML = `
+          <h3>${title}</h3>
+          <div class="meta">
+            <span>score: ${h.score.toFixed(4)}</span>
+            <a href="${url}" target="_blank" rel="noopener">open TXT</a>
+          </div>
+          <div class="snippet result-snippet">${makeSnippet(rec.text, terms)}</div>
+          <div class="links">
+            <a href="${url}" target="_blank" rel="noopener">Full context</a>
+          </div>
+        `;
+        elOut.appendChild(card);
+      }
+      // citation-spotter.js will auto-annotate inside .result/.snippet
     }
 
-    els.form.addEventListener('submit', doSearch);
-    els.q.addEventListener('keydown', e=>{
-      if (e.key==='Enter' && (e.metaKey||e.ctrlKey||e.shiftKey)){
-        els.or.checked = !els.or.checked; e.preventDefault();
+    function buildQuery(q, orMode){
+      const tokens = q.split(/\s+/).filter(Boolean);
+      if(tokens.length === 0) return "";
+      if(orMode){
+        // default Lunr behavior is OR for plain tokens; just join
+        return tokens.join(" ");
+      } else {
+        // Force AND by prefixing each token with '+'
+        return tokens.map(t => `+${t}`).join(" ");
       }
+    }
+
+    async function run(){
+      const q = elQ.value.trim();
+      if(!q){ setDiag("Enter a query."); elOut.innerHTML = ""; return; }
+      if(!lunrIndex){ setDiag("Index not ready yet."); return; }
+
+      const query = buildQuery(q, elOr.checked);
+      setDiag(`Searching… (${elOr.checked ? "OR" : "AND"} mode)`);
+
+      let hits = [];
+      try {
+        hits = lunrIndex.search(query);
+      } catch(e){
+        // If lunr throws (e.g. invalid char), fall back to OR on words
+        const safe = q.replace(/[^\p{L}\p{N}\s\-'"_]/gu, " ").trim();
+        if(safe) hits = lunrIndex.search(safe);
+      }
+      renderHits(hits, q.split(/\s+/).filter(Boolean));
+      setDiag(`Found ${hits.length} hit${hits.length===1?"":"s"}.`);
+    }
+
+    // ===== Boot =====
+    (async () => {
+      try {
+        meta = await fetchJSON(URL_META);
+        elCounts.textContent = `docs: ${meta.docs ?? "?"}, chunks: ${meta.chunkCount ?? "?""}`;
+      } catch {
+        elCounts.textContent = "index: (meta not found)";
+      }
+
+      const [idxJson, allChunks] = await Promise.all([
+        fetchJSON(URL_LUNR),
+        fetchChunks(URL_CHUNKS),
+      ]);
+
+      chunks = allChunks;
+      byId.clear();
+      for(const c of chunks){ byId.set(c.id, c); }
+
+      lunrIndex = lunr.Index.load(idxJson);
+      setDiag("Index loaded. Enter a query.");
+    })().catch(err=>{
+      setDiag(`Failed to load index: ${err.message}`);
     });
 
-    // --------- load index + docs with fallback ---------
-    async function fetchFirstGood(urls){
-      const errs = [];
-      for (const u of urls){
-        try{
-          const r = await fetch(u, { cache:'no-store' });
-          if (!r.ok) { errs.push(`${u} → ${r.status}`); continue; }
-          return await r.json();
-        }catch(ex){ errs.push(`${u} → ${ex}`); }
-      }
-      throw new Error(errs.join(' | '));
-    }
-
-    (async function init(){
-      document.body.classList.add('loading');
-      try{
-        const [idxJson, docsJson] = await Promise.all([
-          fetchFirstGood(INDEX_CANDIDATES),
-          fetchFirstGood(DOCS_CANDIDATES)
-        ]);
-        idx  = lunr.Index.load(idxJson);
-        docs = Array.isArray(docsJson) ? docsJson : (docsJson.docs || []);
-        byId = Object.fromEntries(docs.map(d => [String(d.id ?? d.ref ?? d.doc ?? d.i), d]));
-        // auto-run any query that was submitted before load finished
-        const msg = `Loaded index (${docs.length} docs).`;
-        if (pending && (pending.q||'').trim()){
-          els.q.value = pending.q;
-          els.or.checked = !!pending.or;
-          const saved = pending; pending = null;
-          const q = buildQuery(saved.q, saved.or);
-          try{
-            const hits = idx.search(q);
-            render(hits.slice(0,200), `${msg} · Auto-searched.`);
-          }catch(e){
-            render([], `${msg} · Query error: ${e && e.message ? e.message : e}`);
-          }
-        } else {
-          render([], msg);
-        }
-      }catch(err){
-        render([], `Failed to load index/docs: ${err && err.message ? err.message : err}`);
-      }
-    })();
-  })();
+    elGo.addEventListener("click", run);
+    elQ.addEventListener("keydown", e => { if(e.key === "Enter") run(); });
   </script>
 </body>
 </html>
