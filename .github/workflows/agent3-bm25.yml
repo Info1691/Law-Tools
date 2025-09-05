@@ -1,83 +1,66 @@
 name: agent3-bm25
+
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "33 4 * * *"  # optional nightly refresh
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+
+      - name: Set git identity for commits
+        run: |
+          git config --global user.name  "Agent3"
+          git config --global user.email "agent3@users.noreply.github.com"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
+          cache: "npm"
 
-      - name: Install deps (lunr only)
-        run: npm i --no-audit --no-fund lunr@2.3.9
+      - name: Install deps (npm ci if lock present, otherwise install)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
 
+      - name: Build BM25 index
+        env:
+          TEXTS_CATALOG: https://texts.wwwbcb.org/texts/catalog.json
+        run: |
+          set -e
+          node scripts/agent3_build.mjs "$TEXTS_CATALOG" ./out
+
+      # publish to Law-Texts-ui/agent3-bm25
       - name: Checkout target repo (Law-Texts-ui)
         uses: actions/checkout@v4
         with:
           repository: Info1691/Law-Texts-ui
-          path: target
           token: ${{ secrets.TEXTS_RW_TOKEN }}
+          path: target
           fetch-depth: 0
 
-      - name: Build BM25 index (write into Law-Texts-ui)
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
+      - name: Copy built files
         run: |
-          mkdir -p target/data/agent3
-          node scripts/agent3_build.mjs --out target/data/agent3
-          echo "---- OUTPUTS IN Law-Texts-ui ----"
-          ls -lh target/data/agent3 || true
-
-      - name: Verify outputs exist
-        run: |
-          test -s target/data/agent3/lunr-index.json
-          test -s target/data/agent3/chunks.jsonl
-          echo "Size (lunr-index.json): $(wc -c < target/data/agent3/lunr-index.json) bytes"
-          echo "Size (chunks.jsonl)    : $(wc -c < target/data/agent3/chunks.jsonl) bytes"
+          mkdir -p target/agent3-bm25
+          cp -f out/* target/agent3-bm25/
 
       - name: Commit & push to Law-Texts-ui
+        working-directory: target
         run: |
-          cd target
-          git config user.name  "agent3"
-          git config user.email "agent3@users.noreply.github.com"
-          git add data/agent3/lunr-index.json data/agent3/chunks.jsonl || true
+          set -e
+          git add agent3-bm25
           if git diff --cached --quiet; then
-            echo "No changes to commit for Law-Texts-ui."
+            echo "No changes to commit."
           else
             git commit -m "agent3: refresh BM25 index"
-            git pull --rebase || true
-            git push
-          fi
-
-      # Fallback publish into Law-Tools site too
-      - name: Copy fallback into Law-Tools (this repo)
-        run: |
-          mkdir -p data/agent3
-          cp target/data/agent3/lunr-index.json data/agent3/
-          cp target/data/agent3/chunks.jsonl    data/agent3/
-          echo "---- OUTPUTS IN Law-Tools ----"
-          ls -lh data/agent3 || true
-          git add data/agent3/lunr-index.json data/agent3/chunks.jsonl || true
-
-      - name: Configure Git (Law-Tools) & commit fallback
-        run: |
-          git config user.name  "agent3"
-          git config user.email "agent3@users.noreply.github.com"
-          if git diff --cached --quiet; then
-            echo "No fallback changes to commit."
-          else
-            git commit -m "agent3: publish fallback index under tools"
-            git pull --rebase || true
             git push
           fi
