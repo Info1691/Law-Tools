@@ -2,8 +2,15 @@ name: agent3-bm25
 
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: "33 4 * * *"  # optional nightly refresh
+
+permissions:
+  contents: write
+
+env:
+  GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
+  TARGET_REPO: Info1691/Law-Texts-ui
+  TARGET_PATH: target
+  OUT_PATH: out
 
 jobs:
   build:
@@ -13,6 +20,13 @@ jobs:
       - name: Checkout Law-Tools (this repo)
         uses: actions/checkout@v4
 
+      - name: Checkout target repo (Law-Texts-ui)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          path: ${{ env.TARGET_PATH }}
+          token: ${{ env.GH_TOKEN }}
+
       - name: Set git identity for commits
         run: |
           git config --global user.name  "Agent3"
@@ -21,46 +35,25 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: 20
 
-      - name: Install deps (npm ci if lock present, otherwise install)
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          else
-            npm install --no-audit --no-fund
-          fi
+      - name: Install deps (lunr only)
+        run: npm i lunr
 
       - name: Build BM25 index
-        env:
-          TEXTS_CATALOG: https://texts.wwwbcb.org/texts/catalog.json
         run: |
-          set -e
-          node scripts/agent3_build.mjs "$TEXTS_CATALOG" ./out
+          node scripts/agent3_build.mjs --target ./${{ env.TARGET_PATH }} --out ./${{ env.OUT_PATH }}
+          ls -lah ./${{ env.OUT_PATH }}
 
-      # publish to Law-Texts-ui/agent3-bm25
-      - name: Checkout target repo (Law-Texts-ui)
-        uses: actions/checkout@v4
-        with:
-          repository: Info1691/Law-Texts-ui
-          token: ${{ secrets.TEXTS_RW_TOKEN }}
-          path: target
-          fetch-depth: 0
-
-      - name: Copy built files
+      - name: Copy files into Law-Texts-ui/agent3-bm25
         run: |
-          mkdir -p target/agent3-bm25
-          cp -f out/* target/agent3-bm25/
+          mkdir -p ${{ env.TARGET_PATH }}/agent3-bm25
+          cp -f ${{ env.OUT_PATH }}/lunr-index.json  ${{ env.TARGET_PATH }}/agent3-bm25/
+          cp -f ${{ env.OUT_PATH }}/chunks.jsonl     ${{ env.TARGET_PATH }}/agent3-bm25/
 
       - name: Commit & push to Law-Texts-ui
-        working-directory: target
+        working-directory: ${{ env.TARGET_PATH }}
         run: |
-          set -e
-          git add agent3-bm25
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "agent3: refresh BM25 index"
-            git push
-          fi
+          git add agent3-bm25/lunr-index.json agent3-bm25/chunks.jsonl
+          git commit -m "agent3: refresh BM25 index"
+          git push
