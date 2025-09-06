@@ -1,85 +1,45 @@
-name: Create agent3 (BM25 index)
+name: Agent3 Build (BM25/Lunr)
 
 on:
-  workflow_dispatch: {}
-
-permissions:
-  contents: write
-
-env:
-  TARGET_REPO: Info1691/Law-Texts-ui
-  TARGET_DIR: agent3-bm25
-  GH_TOKEN: ${{ secrets.TEXTS_RW_TOKEN }}
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/agent3-build.mjs'
+      - 'Law-Texts-ui/**'
+      - 'data/**'   # adjust if your TXT live elsewhere
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Checkout Law-Tools (this repo)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout target repo (Law-Texts-ui)
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.TARGET_REPO }}
-          token: ${{ env.GH_TOKEN }}
-          path: target
-
-      - name: Set git identity for commits
-        run: |
-          git config --global user.email "ci@texts.wwwbcb.org"
-          git config --global user.name  "Agent3 Builder"
-
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '20'
 
-      - name: Install deps (if package.json exists)
+      - name: Install deps
         run: |
-          if [ -f package-lock.json ] || [ -f package.json ]; then
-            npm ci || npm i
-          fi
+          npm init -y >/dev/null 2>&1 || true
+          npm install lunr
 
-      - name: Build BM25 index
+      - name: Build Agent3 index
         run: |
-          set -e
-          mkdir -p out
-          # If you already have the builder script in this repo, call it:
-          # (Your repo already showed scripts/agent3_build.mjs in logs.)
-          if [ -f scripts/agent3_build.mjs ]; then
-            node scripts/agent3_build.mjs --out out
-          else
-            echo "ERROR: scripts/agent3_build.mjs not found. Add your builder here." >&2
-            exit 2
-          fi
-          # Find the produced files robustly
-          AGENT_JSON=$(find out -maxdepth 2 -type f -name "agent3.json" | head -n1 || true)
-          META_JSON=$(find out -maxdepth 2 -type f -name "agent3.meta.json" | head -n1 || true)
-          if [ -z "$AGENT_JSON" ] || [ -z "$META_JSON" ]; then
-            echo "ERROR: Could not locate agent3.json and/or agent3.meta.json under ./out" >&2
-            echo "Contents of ./out for debugging:" >&2
-            ls -la out >&2 || true
-            exit 3
-          fi
-          echo "Found: $AGENT_JSON and $META_JSON"
+          node scripts/agent3-build.mjs \
+            --src ./data \
+            --out ./agent3-bm25 \
+            --base https://texts.wwwbcb.org/data \
+            --lines 12 \
+            --step 6
 
-      - name: Copy files into Law-Texts-ui/agent3-bm25
+      - name: Commit outputs
         run: |
-          set -e
-          mkdir -p "target/${TARGET_DIR}"
-          cp -v "$AGENT_JSON" "target/${TARGET_DIR}/agent3.json"
-          cp -v "$META_JSON"  "target/${TARGET_DIR}/agent3.meta.json"
-          ls -la "target/${TARGET_DIR}"
-
-      - name: Commit & push to Law-Texts-ui
-        working-directory: target
-        run: |
-          set -e
-          git add "${TARGET_DIR}/agent3.json" "${TARGET_DIR}/agent3.meta.json"
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          git commit -m "agent3: publish BM25 index"
-          git push origin main
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add agent3-bm25/*
+          git commit -m "agent3-bm25: rebuild $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes"
+          git push
