@@ -1,4 +1,4 @@
-name: Agent3 — Deploy UI only (Rule 12, root version)
+name: Agent3 — Deploy UI + Branding (Rule 12)
 
 on:
   workflow_dispatch:
@@ -6,6 +6,12 @@ on:
     paths:
       - 'agent3.html'
       - 'txt-viewer.html'
+      - 'brand.css'
+      - 'agent3.css'
+      - 'logo.png'
+      - 'scripts/**'
+      - 'agent3/**'
+      - 'data/agent3/**'
       - '.github/workflows/agent3-deploy.yml'
 
 permissions:
@@ -27,18 +33,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rule 12 — verify UI
+      - name: Rule 12 — verify UI assets
         run: |
           test -f agent3.html || (echo "ERROR: agent3.html missing" && exit 1)
           test -f txt-viewer.html || (echo "ERROR: txt-viewer.html missing" && exit 1)
+          test -f brand.css || (echo "ERROR: brand.css missing (expected at repo root)" && exit 1)
+          test -f agent3.css || (echo "ERROR: agent3.css missing (expected at repo root)" && exit 1)
+          if [ -f scripts/citation-spotter.js ]; then echo "citation-spotter.js present"; else echo "citation-spotter.js not present (ok)"; fi
 
       - name: Assemble static site (dist/)
         run: |
-          mkdir -p dist
-          cp -f agent3.html dist/agent3.html
-          cp -f txt-viewer.html dist/txt-viewer.html
+          mkdir -p dist scripts dist/agent3
+          # UI + branding
+          cp -f agent3.html      dist/agent3.html
+          cp -f txt-viewer.html  dist/txt-viewer.html
+          cp -f brand.css        dist/brand.css
+          cp -f agent3.css       dist/agent3.css
+          if [ -f logo.png ]; then cp -f logo.png dist/logo.png; fi
+          if [ -f scripts/citation-spotter.js ]; then mkdir -p dist/scripts; cp -f scripts/citation-spotter.js dist/scripts/citation-spotter.js; fi
+
+          # Optional: copy index if present (agent3 or data/agent3)
+          if [ -f agent3/agent3.meta.json ] && [ -f agent3/lunr-index.json ] && [ -f agent3/chunks.jsonl ]; then
+            cp -f agent3/agent3.meta.json dist/agent3/agent3.meta.json
+            cp -f agent3/lunr-index.json  dist/agent3/lunr-index.json
+            cp -f agent3/chunks.jsonl     dist/agent3/chunks.jsonl
+            echo "Copied index from /agent3"
+          elif [ -f data/agent3/agent3.meta.json ] && [ -f data/agent3/lunr-index.json ] && [ -f data/agent3/chunks.jsonl ]; then
+            cp -f data/agent3/agent3.meta.json dist/agent3/agent3.meta.json
+            cp -f data/agent3/lunr-index.json  dist/agent3/lunr-index.json
+            cp -f data/agent3/chunks.jsonl     dist/agent3/chunks.jsonl
+            echo "Copied index from /data/agent3"
+          else
+            echo "No index found; UI will load but show 'Failed to load index'."
+          fi
+
+          # Custom domain
           echo "tools.wwwbcb.org" > dist/CNAME
-          echo "== dist tree ==" && find dist -maxdepth 2 -type f -print
+
+          echo "== dist tree ==" && find dist -maxdepth 3 -type f -print
 
       - name: Upload artifact to Pages
         uses: actions/upload-pages-artifact@v3
