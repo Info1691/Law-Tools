@@ -6,13 +6,12 @@
 <title>TXT Viewer</title>
 <style>
   :root { --bg:#0b0f17; --card:#111725; --ink:#e7edf6; --muted:#aab6c8; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
   header { padding:12px 16px; border-bottom:1px solid #16233a; }
   main { padding:16px; }
   pre { white-space:pre-wrap; word-break:break-word; background:var(--card); padding:12px; border-radius:6px; border:1px solid #1a2335; }
   .muted { color:var(--muted); font-size:12px; }
-  a { color:#93c5fd; text-decoration:none; }
-  a:hover { text-decoration:underline; }
+  a { color:#93c5fd; text-decoration:none; } a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -23,34 +22,19 @@
 <main>
   <pre id="content">Loading…</pre>
 </main>
-
 <script>
-const p = new URLSearchParams(location.search);
-const src = p.get("src");
-const start = parseInt(p.get("start")||"0",10);
-const end   = parseInt(p.get("end")||"0",10);
-const elT = document.getElementById("title");
-const elM = document.getElementById("meta");
-const elC = document.getElementById("content");
-
-function clamp(n, lo, hi){ return Math.max(lo, Math.min(hi, n)); }
-
+const p=new URLSearchParams(location.search);
+const src=p.get("src"); const start=parseInt(p.get("start")||"0",10); const end=parseInt(p.get("end")||"0",10);
+const elT=document.getElementById("title"), elM=document.getElementById("meta"), elC=document.getElementById("content");
+function clamp(n,lo,hi){ return Math.max(lo,Math.min(hi,n)); }
 async function load(){
   if(!src){ elC.textContent="Missing src"; return; }
-  const r = await fetch(src, { cache:"no-store" });
-  if(!r.ok){ elC.textContent=`HTTP ${r.status}`; return; }
-  const txt = await r.text();
-  const lines = txt.split(/\r?\n/);
-
-  const s0 = clamp(start, 0, Math.max(0, lines.length-1));
-  const e0 = end>0 ? clamp(end, s0+1, lines.length) : clamp(s0+10, s0+1, lines.length);
-
-  const clip = lines.slice(s0, e0)
-    .map((line, i)=> String(s0+i+1).padStart(6,' ') + "  " + line) // show line numbers 1-based
-    .join("\n");
-
+  const r=await fetch(src,{cache:"no-store"}); if(!r.ok){ elC.textContent=`HTTP ${r.status}`; return; }
+  const txt=await r.text(); const lines=txt.split(/\r?\n/);
+  const s0=clamp(start,0,Math.max(0,lines.length-1)); const e0=end>0?clamp(end,s0+1,lines.length):clamp(s0+10,s0+1,lines.length);
+  const clip=lines.slice(s0,e0).map((line,i)=>String(s0+i+1).padStart(6,' ')+"  "+line).join("\n");
   elT.textContent = src.split("/").pop() || "Segment";
-  elM.textContent = `${src}  •  lines ${s0+1}–${e0} (${e0-s0} lines)`;
+  elM.textContent = `${src} • lines ${s0+1}–${e0} (${e0-s0} lines)`;
   elC.textContent = clip;
 }
 load();
