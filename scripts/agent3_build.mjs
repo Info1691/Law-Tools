@@ -1,112 +1,163 @@
-// Minimal, explicit builder: fetch 3 catalogs, fetch TXT, chunk, build lunr, emit 4 files.
-// Inputs:  --out <dir>   (required)
-//          --catalogs "<url1>\n<url2>\n<url3>"  (required)
-import fs from 'node:fs/promises';
+#!/usr/bin/env node
+/**
+ * Agent3 Builder
+ * - Scans a source directory for .txt files
+ * - Emits:
+ *    agent3.meta.json  -> { docs, chunkCount, builtAt }
+ *    chunks.jsonl      -> one JSON per line with {id,url,title,text,lineStart,lineEnd,source}
+ *    lunr-index.json   -> serialized lunr index (id,title,text)
+ *    agent3.json       -> { base, index, chunks, meta } manifest
+ *
+ * USAGE:
+ *   node scripts/agent3-build.mjs --src ./data --out ./agent3-bm25 --base https://texts.wwwbcb.org/raw
+ *
+ * NOTES:
+ *   - Adjust --base to the public host that serves your raw TXT files.
+ *   - Chunks are line-windowed for stable segment links (default 12 lines, step 6).
+ */
+
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
-import process from 'node:process';
+import url from 'node:url';
+import readline from 'node:readline';
 import lunr from 'lunr';
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, arr) => {
-  if (v.startsWith('--')) a.push([v.replace(/^--/,''),
-    (arr[i+1] && !arr[i+1].startsWith('--')) ? arr[i+1] : '']);
-  return a;
-}, []));
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
-const OUT = args.out?.trim();
-if (!OUT) {
-  console.error('ERROR: --out is required');
-  process.exit(2);
-}
-
-const catalogsRaw = (args.catalogs || '').trim();
-if (!catalogsRaw) {
-  console.error('ERROR: --catalogs "<url1>\\n<url2>\\n<url3>" is required');
-  process.exit(2);
-}
-
-await fs.mkdir(OUT, { recursive: true });
-
-const catalogUrls = catalogsRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-
-async function getJson(url) {
-  const r = await fetch(url, { headers: { 'Accept': 'application/json' }});
-  if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
-  return r.json();
-}
-async function getTxt(url) {
-  const r = await fetch(url, { headers: { 'Accept': 'text/plain' }});
-  if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
-  return r.text();
-}
-
-// 1) Load catalogs
-const items = [];
-for (const url of catalogUrls) {
-  const arr = await getJson(url);
-  for (const it of arr) {
-    if (it?.url_txt) items.push({
-      title: it.title || '',
-      kind: it.kind || '',
-      jurisdiction: it.jurisdiction || '',
-      url: it.url_txt
-    });
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const out = {};
+  for (let i=0;i<args.length;i++){
+    const a = args[i];
+    if (a === '--src')  out.src  = args[++i];
+    else if (a === '--out')  out.out  = args[++i];
+    else if (a === '--base') out.base = args[++i];
+    else if (a === '--lines') out.lines = parseInt(args[++i],10);
+    else if (a === '--step')  out.step  = parseInt(args[++i],10);
   }
+  return out;
 }
 
-// 2) Fetch & chunk (simple paragraph splitter)
-const docs = [];
-const chunks = [];
-const MAX_DOCS = 50000; // safety
-let docId = 0;
-for (const it of items) {
-  if (docId >= MAX_DOCS) break;
-  try {
-    const text = await getTxt(it.url);
-    const paras = text.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-    const baseId = `d${docId++}`;
-    docs.push({ id: baseId, title: it.title, kind: it.kind, jurisdiction: it.jurisdiction, url: it.url, paraCount: paras.length });
+function walkTxtFiles(root) {
+  /** @type {string[]} */
+  const files = [];
+  (function rec(dir){
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) rec(p);
+      else if (entry.isFile() && p.toLowerCase().endsWith('.txt')) files.push(p);
+    }
+  })(root);
+  return files.sort();
+}
 
-    paras.forEach((p, i) => {
-      chunks.push({
-        id: `${baseId}#${i}`,
-        text: p,
-        title: it.title,
-        kind: it.kind,
-        jurisdiction: it.jurisdiction,
-        url: it.url
-      });
-    });
-  } catch (e) {
-    console.warn('WARN: skipping', it.url, String(e));
+async function readLines(file) {
+  const rl = readline.createInterface({
+    input: fs.createReadStream(file, { encoding: 'utf8' }),
+    crlfDelay: Infinity
+  });
+  const lines = [];
+  for await (const line of rl) lines.push(line);
+  return lines;
+}
+
+function toPublicUrl(base, srcRoot, filePath) {
+  // Convert local file path under srcRoot → public URL under base
+  // e.g., srcRoot=/repo/data, filePath=/repo/data/laws/jersey/JTL-1984.txt
+  // base=https://texts.wwwbcb.org/data → https://texts.wwwbcb.org/data/laws/jersey/JTL-1984.txt
+  const rel = path.relative(srcRoot, filePath).split(path.sep).join('/');
+  return `${base.replace(/\/+$/,'')}/${rel}`;
+}
+
+async function main() {
+  const { src, out, base, lines: LINES = 12, step: STEP = 6 } = parseArgs();
+
+  if (!src || !out || !base) {
+    console.error('Usage: node scripts/agent3-build.mjs --src ./data --out ./agent3-bm25 --base https://texts.wwwbcb.org/data');
+    process.exit(1);
   }
+  await fsp.mkdir(out, { recursive: true });
+
+  const files = walkTxtFiles(src);
+  const chunksPath = path.join(out, 'chunks.jsonl');
+  const chunksStream = fs.createWriteStream(chunksPath, { encoding: 'utf8' });
+
+  /** Indexables for lunr */
+  /** @type {{id:string,title:string,text:string}[]} */
+  const docs = [];
+
+  let idCounter = 0;
+  let chunkCount = 0;
+
+  for (const file of files) {
+    const title = path.basename(file);
+    const urlPub = toPublicUrl(base, src, file);
+    const lines = await readLines(file);
+
+    // create sliding windows
+    for (let start = 0; start < lines.length; start += STEP) {
+      const end = Math.min(lines.length, start + LINES);
+      const text = lines.slice(start, end).join('\n').trim();
+      if (!text) continue;
+
+      const id = String(idCounter++);
+      const rec = {
+        id,
+        url: urlPub,
+        title,
+        text,
+        lineStart: start, // zero-based inclusive
+        lineEnd: end,     // zero-based exclusive
+        source: file
+      };
+
+      chunksStream.write(JSON.stringify(rec) + '\n');
+
+      // For lunr indexing: keep id/title/text
+      docs.push({ id, title, text });
+      chunkCount++;
+
+      if (end === lines.length) break; // finished
+    }
+  }
+  chunksStream.end();
+
+  // Build lunr index
+  const idx = lunr(function () {
+    this.ref('id');
+    this.field('title');
+    this.field('text');
+    for (const d of docs) this.add(d);
+  });
+
+  const lunrPath = path.join(out, 'lunr-index.json');
+  await fsp.writeFile(lunrPath, JSON.stringify(idx), 'utf8');
+
+  // Meta
+  const meta = {
+    docs: files.length,
+    chunkCount,
+    builtAt: new Date().toISOString(),
+    windowLines: LINES,
+    windowStep: STEP
+  };
+  await fsp.writeFile(path.join(out, 'agent3.meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+
+  // Manifest
+  const baseUrl = toPublicUrl(base, src, out).replace(/\/[^\/]+$/, '/'); // best-effort; not strictly needed
+  const manifest = {
+    base: `https://texts.wwwbcb.org/agent3-bm25/`, // CHANGE if you publish elsewhere
+    index: "lunr-index.json",
+    chunks: "chunks.jsonl",
+    meta: "agent3.meta.json"
+  };
+  await fsp.writeFile(path.join(out, 'agent3.json'), JSON.stringify(manifest, null, 2), 'utf8');
+
+  console.log(`Built agent3: files=${files.length}, chunks=${chunkCount}`);
 }
 
-// 3) Build lunr index
-const idx = lunr(function () {
-  this.ref('id');
-  this.field('text');
-  this.field('title');
-  this.field('kind');
-  this.field('jurisdiction');
-  for (const c of chunks) this.add(c);
+main().catch(e => {
+  console.error(e);
+  process.exit(1);
 });
-
-// 4) Emit files
-await fs.writeFile(path.join(OUT, 'lunr-index.json'), JSON.stringify(idx));
-await fs.writeFile(path.join(OUT, 'chunks.jsonl'), chunks.map(c => JSON.stringify(c)).join('\n')+'\n');
-
-const meta = {
-  builtAt: new Date().toISOString(),
-  base: 'https://texts.wwwbcb.org/',
-  catalogItems: items.length,
-  docs: docs.length,
-  chunkCount: chunks.length,
-  engine: 'lunr-2.3.9',
-  source: 'Law-Tools/scripts/agent3_build.mjs',
-  index: 'lunr-index.json',
-  chunks: 'chunks.jsonl'
-};
-await fs.writeFile(path.join(OUT, 'agent3.meta.json'), JSON.stringify(meta, null, 2));
-await fs.writeFile(path.join(OUT, 'agent3.json'), JSON.stringify({ ok: true }));
-
-console.log(`Built index. items=${items.length} docs=${docs.length} chunks=${chunks.length}`);
