@@ -18,7 +18,7 @@
     .btn { appearance:none; border:1px solid #29426d; background:#13213a; color:#eaf1ff; padding:10px 14px; border-radius:8px; cursor:pointer; }
     .btn:hover { background:#182a4a; }
     label { color:var(--muted); display:flex; align-items:center; gap:6px; user-select:none; }
-    .diag { margin-top:10px; color:var(--muted); font-size:13px; }
+    .diag { margin-top:10px; color:var(--muted); font-size:13px; white-space:pre-wrap; }
     .counts { margin-left:auto; color:var(--muted); font-size:13px; }
     .grid { display:grid; grid-template-columns:1fr; gap:12px; margin-top:16px; }
     .card { background:var(--card); border:1px solid #1a2335; border-radius:10px; padding:12px 14px; }
@@ -30,12 +30,15 @@
     .links { margin-top:8px; display:flex; gap:10px; flex-wrap:wrap; }
     a { color:#93c5fd; text-decoration:none; }
     a:hover { text-decoration:underline; }
+    .ok { color:#77e084; }
+    .err { color:#f87171; }
+    .hint { color:#c9a9ff; }
   </style>
 
-  <!-- Lunr (for loading the serialized index) -->
+  <!-- Lunr (serialized index loader) -->
   <script src="https://cdn.jsdelivr.net/npm/lunr/lunr.min.js"></script>
 
-  <!-- Rule 10 include: client-side citation linker (highlights “Saunders v Vautier”, neutral cites, etc.) -->
+  <!-- Rule 10: client-side citation linker (highlights case names, neutral cites, etc.) -->
   <script src="/scripts/citation-spotter.js" defer></script>
 </head>
 <body>
@@ -56,46 +59,62 @@
   </main>
 
   <script>
-    // ===== Configuration =====
-    const TEXTS_BASE = "https://texts.wwwbcb.org/agent3-bm25"; // where agent3 outputs live
+    // ================================
+    // Rule 12: self-diagnostics & no silent failures
+    // ================================
+
+    // ---- Config (keep your live paths) ----
+    const TEXTS_BASE = "https://texts.wwwbcb.org/agent3-bm25";
     const URL_META   = `${TEXTS_BASE}/agent3.meta.json`;
     const URL_LUNR   = `${TEXTS_BASE}/lunr-index.json`;
     const URL_CHUNKS = `${TEXTS_BASE}/chunks.jsonl`;
 
-    // ===== State =====
+    // ---- State ----
     let lunrIndex = null;
     let chunks = [];              // array of { id, url, title, text }
-    let byId   = new Map();       // id -> record
-    let meta   = null;
+    const byId = new Map();       // id -> record
+    let meta = null;
 
+    // ---- Elements ----
     const $ = sel => document.querySelector(sel);
-    const elQ     = $("#q");
-    const elGo    = $("#go");
-    const elDiag  = $("#diag");
-    const elOut   = $("#results");
-    const elCounts= $("#counts");
-    const elOr    = $("#orMode");
+    const elQ      = $("#q");
+    const elGo     = $("#go");
+    const elDiag   = $("#diag");
+    const elOut    = $("#results");
+    const elCounts = $("#counts");
+    const elOr     = $("#orMode");
 
-    // ===== Helpers =====
-    function setDiag(msg){ elDiag.textContent = msg || ""; }
-    function esc(s){ return (s||"").replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+    // ---- Diagnostics ----
+    const DEBUG = /[?&]debug=1\b/.test(location.search);
+    const FETCH_OPTS = DEBUG ? { cache:"no-store" } : {};
+    const ok  = (m)=> `\u2713 ${m}`;
+    const err = (m)=> `\u2717 ${m}`;
+    const hint= (m)=> `\u25B6 ${m}`;
+
+    function setDiag(msg, cls) {
+      elDiag.textContent = msg || "";
+      elDiag.className = "diag " + (cls || "");
+    }
+    function appendDiag(line) {
+      elDiag.textContent += (elDiag.textContent ? "\n" : "") + line;
+    }
 
     async function fetchJSON(url){
-      const r = await fetch(url, { cache:"no-store" });
+      const r = await fetch(url, FETCH_OPTS);
       if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
       return r.json();
     }
-    async function fetchChunks(url){
-      const r = await fetch(url, { cache:"no-store" });
+    async function fetchTEXT(url){
+      const r = await fetch(url, FETCH_OPTS);
       if(!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
-      const text = await r.text();
+      return r.text();
+    }
+    async function fetchChunks(url){
+      const text = await fetchTEXT(url);
       const out = [];
       for (const line of text.split(/\r?\n/)) {
         const L = line.trim(); if(!L) continue;
-        try {
-          const obj = JSON.parse(L);
-          out.push(obj);
-        } catch { /* skip */ }
+        try { out.push(JSON.parse(L)); } catch { /* skip bad line */ }
       }
       return out;
     }
@@ -112,15 +131,13 @@
       const start = Math.max(0, pos - Math.floor(span/3));
       const end   = Math.min(txt.length, start + span);
       let slice = txt.slice(start, end);
-
-      // highlight
-      terms.forEach(t=>{
-        if(!t) return;
+      // naive highlight (kept simple; citation-spotter will do extra markup)
+      for (const t of terms) {
+        if (!t) continue;
         const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"), "gi");
-        slice = slice.replace(re, m=>`<mark>${esc(m)}</mark>`);
-      });
-
-      return (start>0?"…":"") + esc(slice).replace(/&lt;mark&gt;|&lt;\/mark&gt;/g, m => m==="&lt;mark&gt;"?"<mark>":"</mark>") + (end<txt.length?"…":"");
+        slice = slice.replace(re, m=>`<mark>${m}</mark>`);
+      }
+      return (start>0?"…":"") + slice + (end<txt.length?"…":"");
     }
 
     function renderHits(hits, terms){
@@ -137,7 +154,7 @@
         if(!rec) continue;
         const card = document.createElement("div");
         card.className = "card result";
-        const title = esc(rec.title || "Untitled");
+        const title = rec.title || "Untitled";
         const url = rec.url || "#";
         card.innerHTML = `
           <h3>${title}</h3>
@@ -152,18 +169,62 @@
         `;
         elOut.appendChild(card);
       }
-      // citation-spotter.js will auto-annotate inside .result/.snippet
+      // Rule 10 linker auto-runs on .result/.snippet
     }
 
     function buildQuery(q, orMode){
       const tokens = q.split(/\s+/).filter(Boolean);
       if(tokens.length === 0) return "";
-      if(orMode){
-        // default Lunr behavior is OR for plain tokens; just join
-        return tokens.join(" ");
-      } else {
-        // Force AND by prefixing each token with '+'
-        return tokens.map(t => `+${t}`).join(" ");
+      if(orMode){ return tokens.join(" "); }
+      return tokens.map(t => `+${t}`).join(" ");
+    }
+
+    function likelyCORS(msg) {
+      return /TypeError|Failed to fetch|CORS|blocked/i.test(String(msg));
+    }
+
+    // ---- Boot sequence with explicit checks ----
+    async function boot() {
+      try {
+        setDiag("Probing meta…");
+        meta = await fetchJSON(URL_META);
+        const docs = Number(meta.docs ?? 0);
+        const chunkCount = Number(meta.chunkCount ?? 0);
+        elCounts.textContent = `docs: ${docs}, chunks: ${chunkCount}`;
+
+        if (docs === 0 || chunkCount === 0) {
+          setDiag(`${err(`Index empty (docs=${docs}, chunks=${chunkCount})`)}\n${hint("Rebuild via Law-Tools → agent3-bm25")} \n${URL_META}`, "err");
+          return;
+        }
+
+        setDiag("Fetching search index…");
+        const idxJson = await fetchJSON(URL_LUNR);
+
+        setDiag("Fetching chunk headers…");
+        const headTxt = await fetchTEXT(URL_CHUNKS);
+        const firstLines = headTxt.split(/\r?\n/).slice(0, 5).join("\n");
+
+        if (DEBUG) {
+          appendDiag(`\n${ok("meta ok")} ${URL_META}`);
+          appendDiag(`${ok("index ok")} ${URL_LUNR}`);
+          appendDiag(`${ok("chunks head ok")} ${URL_CHUNKS}`);
+          appendDiag(`\nHead lines:\n${firstLines}`);
+        }
+
+        // Load full chunks + build ID map
+        chunks = await fetchChunks(URL_CHUNKS);
+        byId.clear();
+        for(const c of chunks){ if (c && c.id != null) byId.set(c.id, c); }
+
+        lunrIndex = lunr.Index.load(idxJson);
+        setDiag(ok(`Index loaded. Enter a query.`), "ok");
+      } catch (e) {
+        setDiag(err(`Failed to load index: ${e.message}`), "err");
+        if (likelyCORS(e.message)) {
+          appendDiag(`\nCORS/host mismatch likely. Serve this page from the same origin as ${TEXTS_BASE} or enable Access-Control-Allow-Origin:* on that host.`);
+        }
+        appendDiag(`\nTried:\n- ${URL_META}\n- ${URL_LUNR}\n- ${URL_CHUNKS}`);
+        if (DEBUG) appendDiag(`\nStack: ${e.stack || e}`);
       }
     }
 
@@ -179,38 +240,17 @@
       try {
         hits = lunrIndex.search(query);
       } catch(e){
-        // If lunr throws (e.g. invalid char), fall back to OR on words
+        // fall back to a safer query if lunr complains
         const safe = q.replace(/[^\p{L}\p{N}\s\-'"_]/gu, " ").trim();
         if(safe) hits = lunrIndex.search(safe);
       }
+
       renderHits(hits, q.split(/\s+/).filter(Boolean));
       setDiag(`Found ${hits.length} hit${hits.length===1?"":"s"}.`);
     }
 
-    // ===== Boot =====
-    (async () => {
-      try {
-        meta = await fetchJSON(URL_META);
-        elCounts.textContent = `docs: ${meta.docs ?? "?"}, chunks: ${meta.chunkCount ?? "?""}`;
-      } catch {
-        elCounts.textContent = "index: (meta not found)";
-      }
-
-      const [idxJson, allChunks] = await Promise.all([
-        fetchJSON(URL_LUNR),
-        fetchChunks(URL_CHUNKS),
-      ]);
-
-      chunks = allChunks;
-      byId.clear();
-      for(const c of chunks){ byId.set(c.id, c); }
-
-      lunrIndex = lunr.Index.load(idxJson);
-      setDiag("Index loaded. Enter a query.");
-    })().catch(err=>{
-      setDiag(`Failed to load index: ${err.message}`);
-    });
-
+    // Start + events
+    boot();
     elGo.addEventListener("click", run);
     elQ.addEventListener("keydown", e => { if(e.key === "Enter") run(); });
   </script>
