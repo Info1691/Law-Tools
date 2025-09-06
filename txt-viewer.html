@@ -4,39 +4,92 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>TXT Viewer</title>
+<link rel="stylesheet" href="/brand.css"/>
 <style>
-  :root { --bg:#0b0f17; --card:#111725; --ink:#e7edf6; --muted:#aab6c8; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
-  header { padding:12px 16px; border-bottom:1px solid #16233a; }
-  main { padding:16px; }
-  pre { white-space:pre-wrap; word-break:break-word; background:var(--card); padding:12px; border-radius:6px; border:1px solid #1a2335; }
-  .muted { color:var(--muted); font-size:12px; }
-  a { color:#93c5fd; text-decoration:none; } a:hover { text-decoration:underline; }
+  body { margin:0; background:#ffffff; color:#111; font:14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { padding:12px 16px; background:#0f1b2f; color:#fff; }
+  .container { max-width:1100px; margin:0 auto; }
+  .meta { color:#cbd5e1; font:12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { padding:16px; background:#fff; }
+  pre { white-space:pre-wrap; word-break:break-word; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #e2e8f0; }
+  mark { background:#fde047; }
+  a { color:#0f6adf; text-decoration:none; } a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
 <header>
-  <div id="title">Segment</div>
-  <div class="muted" id="meta"></div>
+  <div class="container">
+    <div id="title" style="font-weight:600">Segment</div>
+    <div class="meta" id="meta"></div>
+  </div>
 </header>
-<main>
+<main class="container">
   <pre id="content">Loading…</pre>
 </main>
 <script>
-const p=new URLSearchParams(location.search);
-const src=p.get("src"); const start=parseInt(p.get("start")||"0",10); const end=parseInt(p.get("end")||"0",10);
+const p = new URLSearchParams(location.search);
+const src   = p.get("src");
+const start = Number(p.get("start"));
+const end   = Number(p.get("end"));
+const q     = p.get("q") || ""; // fallback query terms, space-separated
+const linesAround = 10;
+
 const elT=document.getElementById("title"), elM=document.getElementById("meta"), elC=document.getElementById("content");
+
 function clamp(n,lo,hi){ return Math.max(lo,Math.min(hi,n)); }
+function normalizeTerms(q){ return (q||"").split(/\s+/).map(s=>s.trim()).filter(Boolean); }
+
+function findLineByTerms(fullText, terms){
+  if(!terms.length) return 0;
+  const lines = fullText.split(/\r?\n/);
+  const lc = lines.map(l => l.toLowerCase());
+  const tl = terms.map(t => t.toLowerCase());
+  // try: first line containing ALL terms
+  for (let i=0;i<lc.length;i++){
+    const L = lc[i];
+    if (tl.every(t => L.includes(t))) return i;
+  }
+  // try: first line containing ANY term
+  for (let i=0;i<lc.length;i++){
+    const L = lc[i];
+    if (tl.some(t => L.includes(t))) return i;
+  }
+  return 0;
+}
+
 async function load(){
   if(!src){ elC.textContent="Missing src"; return; }
-  const r=await fetch(src,{cache:"no-store"}); if(!r.ok){ elC.textContent=`HTTP ${r.status}`; return; }
-  const txt=await r.text(); const lines=txt.split(/\r?\n/);
-  const s0=clamp(start,0,Math.max(0,lines.length-1)); const e0=end>0?clamp(end,s0+1,lines.length):clamp(s0+10,s0+1,lines.length);
-  const clip=lines.slice(s0,e0).map((line,i)=>String(s0+i+1).padStart(6,' ')+"  "+line).join("\n");
-  elT.textContent = src.split("/").pop() || "Segment";
-  elM.textContent = `${src} • lines ${s0+1}–${e0} (${e0-s0} lines)`;
-  elC.textContent = clip;
+  const r = await fetch(src, { cache:"no-store" });
+  if(!r.ok){ elC.textContent=`HTTP ${r.status}`; return; }
+  const txt = await r.text();
+  const lines = txt.split(/\r?\n/);
+
+  let s = Number.isFinite(start) ? start : NaN;
+  let e = Number.isFinite(end)   ? end   : NaN;
+
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s===0 && e===0) {
+    const terms = normalizeTerms(q);
+    const hitLine = findLineByTerms(txt, terms);
+    s = clamp(hitLine - Math.floor(linesAround/2), 0, Math.max(0, lines.length-1));
+    e = clamp(s + linesAround, s+1, lines.length);
+  }
+
+  const clip = lines.slice(s, e).map((line,i)=>String(s+i+1).padStart(6,' ')+"  "+line).join("\n");
+  elT.textContent = (src.split("/").pop() || "Segment");
+  elM.innerHTML = `${src} • lines ${s+1}–${e} (${e-s} lines)` + (q ? ` • query: <code>${q}</code>` : "");
+  elC.innerHTML = q ? highlightTerms(clip, normalizeTerms(q)) : clip;
 }
+
+function highlightTerms(text, terms){
+  if(!terms.length) return text;
+  let out = text;
+  for(const t of terms){
+    const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"), "gi");
+    out = out.replace(re, m => `<mark>${m}</mark>`);
+  }
+  return out;
+}
+
 load();
 </script>
 </body>
