@@ -4,78 +4,111 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Agent 3 — BM25 / Lunr Search</title>
-  <style>
-    :root { --bg:#0b0f17; --card:#111725; --ink:#e7edf6; --muted:#aab6c8; --accent:#3b82f6; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji"; }
-    header { background:#0f1b2f; border-bottom:1px solid #16233a; padding:14px 18px; display:flex; gap:12px; align-items:center; }
-    header h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:.2px; }
-    main { max-width:1100px; margin:24px auto; padding:0 16px 48px; }
-    .row { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
-    .searchbar { background:var(--card); border:1px solid #1a2335; border-radius:10px; padding:12px; display:flex; gap:10px; align-items:center; }
-    .searchbar input[type="text"] { flex:1; background:#0d1320; border:1px solid #22304d; border-radius:8px; padding:10px 12px; color:var(--ink); outline:none; }
-    .btn { appearance:none; border:1px solid #29426d; background:#13213a; color:#eaf1ff; padding:10px 14px; border-radius:8px; cursor:pointer; }
-    .btn:hover { background:#182a4a; }
-    label { color:var(--muted); display:flex; align-items:center; gap:6px; user-select:none; }
-    .diag { margin-top:10px; color:var(--muted); font-size:13px; white-space:pre-wrap; }
-    .counts { margin-left:auto; color:var(--muted); font-size:13px; }
-    .grid { display:grid; grid-template-columns:1fr; gap:12px; margin-top:16px; }
-    .card { background:var(--card); border:1px solid #1a2335; border-radius:10px; padding:12px 14px; }
-    .card h3 { margin:0 0 6px 0; font-size:15px; }
-    .meta { color:var(--muted); font-size:12px; display:flex; gap:12px; flex-wrap:wrap; }
-    .snippet { margin-top:6px; white-space:pre-wrap; word-break:break-word; }
-    mark { background:#fde04733; padding:0 .2em; border-radius:2px; }
-    .nores { margin-top:12px; color:#fca5a5; }
-    .links { margin-top:8px; display:flex; gap:10px; flex-wrap:wrap; }
-    a { color:#93c5fd; text-decoration:none; }
-    a:hover { text-decoration:underline; }
-    .ok { color:#77e084; }
-    .err { color:#f87171; }
-    .hint { color:#c9a9ff; }
-  </style>
+
+  <!-- Your site-wide branding -->
+  <link rel="stylesheet" href="/brand.css" />
+  <!-- Per-page styling for Agent 3 -->
+  <link rel="stylesheet" href="/agent3.css" />
+
   <script src="https://cdn.jsdelivr.net/npm/lunr/lunr.min.js"></script>
   <script src="/scripts/citation-spotter.js" defer></script>
 </head>
 <body>
-  <header>
-    <h1>Agent 3 — BM25 / Lunr Search</h1>
-    <span class="counts" id="counts">index: …</span>
+  <header class="site-header">
+    <div class="container">
+      <img src="/logo.png" alt="logo" class="site-logo" />
+      <h1>Agent 3 — BM25 / Lunr Search</h1>
+      <span class="counts" id="counts">index: …</span>
+    </div>
   </header>
-  <main>
+
+  <main class="container">
     <div class="searchbar row">
-      <input id="q" type="text" placeholder="Try: beddoe consent litigation • Saunders v Vautier • Trusts (Jersey) Law 1984" />
+      <input id="q" type="text" placeholder="Try: beddoe consent litigation  •  Saunders v Vautier  •  Trusts (Jersey) Law 1984" />
       <button class="btn" id="go">Search</button>
-      <label><input type="checkbox" id="orMode" /> OR mode</label>
+      <label class="checkbox"><input type="checkbox" id="orMode" /> OR mode</label>
     </div>
     <div class="diag" id="diag">Index loading…</div>
     <div class="grid" id="results"></div>
   </main>
+
   <script>
-    // Use the index you already have at /agent3/*
+    // ===== Config: look for index files at /agent3/*
     const TEXTS_BASE = "/agent3";
     const URL_META   = `${TEXTS_BASE}/agent3.meta.json`;
     const URL_LUNR   = `${TEXTS_BASE}/lunr-index.json`;
     const URL_CHUNKS = `${TEXTS_BASE}/chunks.jsonl`;
 
+    // ===== State =====
     let lunrIndex = null;
-    let chunks = [];
     const byId = new Map();
-    let meta = null;
+    let chunks = [];
 
-    const $ = sel => document.querySelector(sel);
+    // ===== Elements =====
+    const $ = s => document.querySelector(s);
     const elQ=$("#q"), elGo=$("#go"), elDiag=$("#diag"), elOut=$("#results"), elCounts=$("#counts"), elOr=$("#orMode");
+
     const DEBUG = /[?&]debug=1\b/.test(location.search);
-    const FETCH_OPTS = DEBUG ? { cache:"no-store" } : {};
-    const ok=(m)=>`✓ ${m}`, err=(m)=>`✗ ${m}`, hint=(m)=>`▶ ${m}`;
-    function setDiag(msg,cls){ elDiag.textContent=msg||""; elDiag.className="diag "+(cls||""); }
-    function appendDiag(line){ elDiag.textContent+=(elDiag.textContent?"\n":"")+line; }
-    async function fetchJSON(u){ const r=await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.json(); }
-    async function fetchTEXT(u){ const r=await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.text(); }
-    async function fetchChunks(u){ const t=await fetchTEXT(u); const out=[]; for(const L of t.split(/\r?\n/)){ const s=L.trim(); if(!s) continue; try{ out.push(JSON.parse(s)); }catch{} } return out; }
-    function makeSnippet(txt, terms, span=160){ if(!txt) return ""; const low=txt.toLowerCase(); let pos=-1; for(const t of terms){ const p=low.indexOf(t.toLowerCase()); if(p>=0&&(pos===-1||p<pos)) pos=p; } if(pos===-1) pos=0; const start=Math.max(0,pos-Math.floor(span/3)); const end=Math.min(txt.length,start+span); let slice=txt.slice(start,end); for(const t of terms){ if(!t) continue; const re=new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"gi"); slice=slice.replace(re,m=>`<mark>${m}</mark>`);} return (start>0?"…":"")+slice+(end<txt.length?"…":""); }
+    const FETCH_OPTS = DEBUG ? { cache: "no-store" } : {};
+    const ok  = m => `✓ ${m}`;
+    const err = m => `✗ ${m}`;
+    const hint= m => `▶ ${m}`;
+
+    function setDiag(msg, cls){ elDiag.textContent = msg || ""; elDiag.className = "diag " + (cls||""); }
+    function appendDiag(line){ elDiag.textContent += (elDiag.textContent ? "\n" : "") + line; }
+
+    async function fetchJSON(u){ const r = await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.json(); }
+    async function fetchTEXT(u){ const r = await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.text(); }
+    async function fetchChunks(u){
+      const t = await fetchTEXT(u);
+      const out = [];
+      for (const L of t.split(/\r?\n/)) {
+        const s = L.trim(); if (!s) continue;
+        try { out.push(JSON.parse(s)); } catch {}
+      }
+      return out;
+    }
+
+    function makeSnippet(txt, terms, span=160){
+      if(!txt) return "";
+      const low = txt.toLowerCase();
+      let pos = -1;
+      for(const t of terms){
+        const p = low.indexOf(t.toLowerCase());
+        if(p >= 0 && (pos === -1 || p < pos)) pos = p;
+      }
+      if(pos === -1) pos = 0;
+      const start = Math.max(0, pos - Math.floor(span/3));
+      const end   = Math.min(txt.length, start + span);
+      let slice = txt.slice(start, end);
+      for(const t of terms){
+        if(!t) continue;
+        const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"), "gi");
+        slice = slice.replace(re, m=>`<mark>${m}</mark>`);
+      }
+      return (start>0?"…":"") + slice + (end<txt.length?"…":"");
+    }
+
     function renderHits(hits, terms){
-      elOut.innerHTML=""; if(!hits.length){ const d=document.createElement("div"); d.className="nores"; d.textContent="No matches in the indexed documents."; elOut.appendChild(d); return; }
-      for(const h of hits){ const rec=byId.get(h.ref)||byId.get(h.ref.toString()); if(!rec) continue; const card=document.createElement("div"); card.className="card result"; const title=rec.title||"Untitled"; const url=rec.url||"#"; const start=Number.isFinite(rec.lineStart)?rec.lineStart:0; const end=Number.isFinite(rec.lineEnd)?rec.lineEnd:(start+10); const viewUrl=`/Law-Tools/txt-viewer.html?src=${encodeURIComponent(url)}&start=${start}&end=${end}`; card.innerHTML=`
+      elOut.innerHTML = "";
+      if(!hits.length){
+        const div = document.createElement("div");
+        div.className = "nores";
+        div.textContent = "No matches in the indexed documents.";
+        elOut.appendChild(div);
+        return;
+      }
+      for(const h of hits){
+        const rec = byId.get(h.ref) || byId.get(h.ref.toString());
+        if(!rec) continue;
+        const card = document.createElement("div");
+        card.className = "card result";
+        const title = rec.title || "Untitled";
+        const url = rec.url || "#";
+        const start = Number.isFinite(rec.lineStart) ? rec.lineStart : 0;
+        const end   = Number.isFinite(rec.lineEnd)   ? rec.lineEnd   : (start + 10);
+        const viewUrl = `/txt-viewer.html?src=${encodeURIComponent(url)}&start=${start}&end=${end}`;
+        card.innerHTML = `
           <h3>${title}</h3>
           <div class="meta">
             <span>score: ${h.score.toFixed(4)}</span>
@@ -86,35 +119,71 @@
           <div class="links">
             <a href="${viewUrl}" target="_blank" rel="noopener">Segment (±10 lines)</a>
             <a href="${url}" target="_blank" rel="noopener">Full context</a>
-          </div>`; elOut.appendChild(card); }
-    }
-    function buildQuery(q,orMode){ const tokens=q.split(/\s+/).filter(Boolean); if(tokens.length===0) return ""; return orMode?tokens.join(" "):tokens.map(t=>`+${t}`).join(" "); }
-    function likelyCORS(msg){ return /TypeError|Failed to fetch|CORS|blocked/i.test(String(msg)); }
-    async function boot(){
-      try{
-        setDiag("Probing meta…");
-        meta = await fetchJSON(URL_META);
-        const docs=Number(meta.docs??0), chunkCount=Number(meta.chunkCount??0);
-        elCounts.textContent=`docs: ${docs}, chunks: ${chunkCount}`;
-        if(docs===0||chunkCount===0){ setDiag(`${err(`Index empty (docs=${docs}, chunks=${chunkCount})`)}\n${hint("Rebuild or publish index to /agent3")}\n${URL_META}`,"err"); return; }
-        setDiag("Fetching search index…"); const idxJson=await fetchJSON(URL_LUNR);
-        setDiag("Fetching chunks…"); chunks=await fetchChunks(URL_CHUNKS); byId.clear(); for(const c of chunks){ if(c && c.id!=null) byId.set(c.id,c); }
-        lunrIndex = lunr.Index.load(idxJson);
-        setDiag(ok("Index loaded. Enter a query."),"ok");
-      }catch(e){
-        setDiag(err(`Failed to load index: ${e.message}`),"err");
-        if(likelyCORS(e.message)){ appendDiag(`\nCORS/host mismatch likely.`); }
-        appendDiag(`\nTried:\n- ${URL_META}\n- ${URL_LUNR}\n- ${URL_CHUNKS}`);
+          </div>`;
+        elOut.appendChild(card);
       }
     }
-    async function run(){
-      const q=elQ.value.trim(); if(!q){ setDiag("Enter a query."); elOut.innerHTML=""; return; }
-      if(!lunrIndex){ setDiag("Index not ready yet."); return; }
-      const query=buildQuery(q, elOr.checked); setDiag(`Searching… (${elOr.checked?"OR":"AND"} mode)`);
-      let hits=[]; try{ hits=lunrIndex.search(query); }catch(e){ const safe=q.replace(/[^\p{L}\p{N}\s\-'"_]/gu," ").trim(); if(safe) hits=lunrIndex.search(safe); }
-      renderHits(hits, q.split(/\s+/).filter(Boolean)); setDiag(`Found ${hits.length} hit${hits.length===1?"":"s"}.`);
+
+    function buildQuery(q, orMode){
+      const tokens = q.split(/\s+/).filter(Boolean);
+      if(tokens.length === 0) return "";
+      return orMode ? tokens.join(" ") : tokens.map(t => `+${t}`).join(" ");
     }
-    boot(); elGo.addEventListener("click", run); elQ.addEventListener("keydown", e=>{ if(e.key==="Enter") run(); });
+
+    function likelyCORS(msg){ return /TypeError|Failed to fetch|CORS|blocked/i.test(String(msg)); }
+
+    async function boot(){
+      try {
+        setDiag("Probing meta…");
+        const meta = await fetchJSON(URL_META);
+        const docs = Number(meta.docs ?? 0);
+        const chunkCount = Number(meta.chunkCount ?? 0);
+        elCounts.textContent = `docs: ${docs}, chunks: ${chunkCount}`;
+
+        if (docs === 0 || chunkCount === 0) {
+          setDiag(`${err(`Index empty (docs=${docs}, chunks=${chunkCount})`)}\n${hint("Publish /agent3 index files to enable search.")}\n${URL_META}`, "err");
+          return;
+        }
+
+        setDiag("Fetching search index…");
+        const idxJson = await fetchJSON(URL_LUNR);
+
+        setDiag("Fetching chunks…");
+        chunks = await fetchChunks(URL_CHUNKS);
+        byId.clear();
+        for(const c of chunks){ if (c && c.id != null) byId.set(c.id, c); }
+
+        lunrIndex = lunr.Index.load(idxJson);
+        setDiag(ok("Index loaded. Enter a query."), "ok");
+      } catch (e) {
+        setDiag(err(`Failed to load index: ${e.message}`), "err");
+        appendDiag(`\nTried:\n- ${URL_META}\n- ${URL_LUNR}\n- ${URL_CHUNKS}`);
+        if (likelyCORS(e.message)) appendDiag(`\nNote: publish index and UI on the same origin to avoid CORS.`);
+      }
+    }
+
+    async function run(){
+      const q = elQ.value.trim();
+      if(!q){ setDiag("Enter a query."); elOut.innerHTML = ""; return; }
+      if(!lunrIndex){ setDiag("Index not ready yet."); return; }
+
+      const query = buildQuery(q, elOr.checked);
+      setDiag(`Searching… (${elOr.checked ? "OR" : "AND"} mode)`);
+
+      let hits = [];
+      try { hits = lunrIndex.search(query); }
+      catch(e){
+        const safe = q.replace(/[^\p{L}\p{N}\s\-'"_]/gu, " ").trim();
+        if(safe) hits = lunrIndex.search(safe);
+      }
+
+      renderHits(hits, q.split(/\s+/).filter(Boolean));
+      setDiag(`Found ${hits.length} hit${hits.length===1?"":"s"}.`);
+    }
+
+    boot();
+    elGo.addEventListener("click", run);
+    elQ.addEventListener("keydown", e => { if(e.key === "Enter") run(); });
   </script>
 </body>
 </html>
