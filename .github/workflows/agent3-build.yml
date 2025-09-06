@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'scripts/agent3-build.mjs'
-      - 'Law-Texts-ui/**'
-      - 'data/**'   # adjust if your TXT live elsewhere
+      - 'Law-Tools/scripts/agent3-build.mjs'
+      - 'Law-Tools/**'
+      - 'data/**'
 
 jobs:
   build:
@@ -16,6 +16,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Sanity: top-level tree
+        run: |
+          echo "== repo root =="
+          ls -la
+          echo
+          echo "== Law-Tools =="
+          ls -la Law-Tools || true
+          echo
+          echo "== data (first 3 levels) =="
+          find data -maxdepth 3 -type d -print 2>/dev/null || true
+
+      - name: Verify builder presence
+        run: |
+          if [ ! -f "Law-Tools/scripts/agent3-build.mjs" ]; then
+            echo "ERROR: Missing builder at Law-Tools/scripts/agent3-build.mjs"
+            exit 1
+          fi
+          echo "Builder found: Law-Tools/scripts/agent3-build.mjs"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -27,14 +46,34 @@ jobs:
           npm init -y >/dev/null 2>&1 || true
           npm install lunr
 
-      - name: Build Agent3 index
+      - name: Build Agent3 index (cd into Law-Tools)
+        working-directory: Law-Tools
         run: |
           node scripts/agent3-build.mjs \
-            --src ./data \
-            --out ./agent3-bm25 \
+            --src ../data \
+            --out ../agent3-bm25 \
             --base https://texts.wwwbcb.org/data \
             --lines 12 \
             --step 6
+
+      - name: Show outputs
+        run: |
+          echo "== agent3-bm25 =="
+          ls -la agent3-bm25 || true
+          echo
+          for f in agent3-bm25/agent3.meta.json agent3-bm25/agent3.json; do
+            echo "---- $f ----"
+            test -f "$f" && sed -n '1,200p' "$f" || echo "(missing)"
+            echo
+          done
+          echo "chunks.jsonl head:"
+          head -n 10 agent3-bm25/chunks.jsonl || true
+
+      - name: Upload artifact (agent3-bm25)
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent3-bm25
+          path: agent3-bm25
 
       - name: Commit outputs
         run: |
