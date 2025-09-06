@@ -5,9 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Agent 3 — BM25 / Lunr Search</title>
 
-  <!-- Your site-wide branding -->
+  <!-- Branding -->
   <link rel="stylesheet" href="/brand.css" />
-  <!-- Per-page styling for Agent 3 -->
   <link rel="stylesheet" href="/agent3.css" />
 
   <script src="https://cdn.jsdelivr.net/npm/lunr/lunr.min.js"></script>
@@ -33,23 +32,21 @@
   </main>
 
   <script>
-    // ===== Config: look for index files at /agent3/*
+    // Index served from YOUR site (workflow copies it from texts.wwwbcb.org at deploy time)
     const TEXTS_BASE = "/agent3";
     const URL_META   = `${TEXTS_BASE}/agent3.meta.json`;
     const URL_LUNR   = `${TEXTS_BASE}/lunr-index.json`;
     const URL_CHUNKS = `${TEXTS_BASE}/chunks.jsonl`;
 
-    // ===== State =====
     let lunrIndex = null;
     const byId = new Map();
     let chunks = [];
 
-    // ===== Elements =====
     const $ = s => document.querySelector(s);
     const elQ=$("#q"), elGo=$("#go"), elDiag=$("#diag"), elOut=$("#results"), elCounts=$("#counts"), elOr=$("#orMode");
 
     const DEBUG = /[?&]debug=1\b/.test(location.search);
-    const FETCH_OPTS = DEBUG ? { cache: "no-store" } : {};
+    const FETCH_OPTS = DEBUG ? { cache:"no-store" } : {};
     const ok  = m => `✓ ${m}`;
     const err = m => `✗ ${m}`;
     const hint= m => `▶ ${m}`;
@@ -57,8 +54,8 @@
     function setDiag(msg, cls){ elDiag.textContent = msg || ""; elDiag.className = "diag " + (cls||""); }
     function appendDiag(line){ elDiag.textContent += (elDiag.textContent ? "\n" : "") + line; }
 
-    async function fetchJSON(u){ const r = await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.json(); }
-    async function fetchTEXT(u){ const r = await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.text(); }
+    async function fetchJSON(u){ const r=await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.json(); }
+    async function fetchTEXT(u){ const r=await fetch(u, FETCH_OPTS); if(!r.ok) throw new Error(`HTTP ${r.status} for ${u}`); return r.text(); }
     async function fetchChunks(u){
       const t = await fetchTEXT(u);
       const out = [];
@@ -89,6 +86,17 @@
       return (start>0?"…":"") + slice + (end<txt.length?"…":"");
     }
 
+    function makeViewerURL(rec, terms){
+      const url = rec.url || "#";
+      const hasLines = Number.isFinite(rec.lineStart) && Number.isFinite(rec.lineEnd);
+      if (hasLines) {
+        return `/txt-viewer.html?src=${encodeURIComponent(url)}&start=${rec.lineStart}&end=${rec.lineEnd}`;
+      }
+      // Fallback: pass search terms for the viewer to locate
+      const q = encodeURIComponent(terms.join(" ").trim());
+      return `/txt-viewer.html?src=${encodeURIComponent(url)}&q=${q}`;
+    }
+
     function renderHits(hits, terms){
       elOut.innerHTML = "";
       if(!hits.length){
@@ -104,21 +112,19 @@
         const card = document.createElement("div");
         card.className = "card result";
         const title = rec.title || "Untitled";
-        const url = rec.url || "#";
-        const start = Number.isFinite(rec.lineStart) ? rec.lineStart : 0;
-        const end   = Number.isFinite(rec.lineEnd)   ? rec.lineEnd   : (start + 10);
-        const viewUrl = `/txt-viewer.html?src=${encodeURIComponent(url)}&start=${start}&end=${end}`;
+        const viewUrl = makeViewerURL(rec, terms);
+        const fullUrl = rec.url || "#";
         card.innerHTML = `
           <h3>${title}</h3>
           <div class="meta">
             <span>score: ${h.score.toFixed(4)}</span>
             <a href="${viewUrl}" target="_blank" rel="noopener">open 10 lines</a>
-            <a href="${url}" target="_blank" rel="noopener">open full TXT</a>
+            <a href="${fullUrl}" target="_blank" rel="noopener">open full TXT</a>
           </div>
           <div class="snippet result-snippet">${makeSnippet(rec.text, terms)}</div>
           <div class="links">
             <a href="${viewUrl}" target="_blank" rel="noopener">Segment (±10 lines)</a>
-            <a href="${url}" target="_blank" rel="noopener">Full context</a>
+            <a href="${fullUrl}" target="_blank" rel="noopener">Full context</a>
           </div>`;
         elOut.appendChild(card);
       }
@@ -133,32 +139,28 @@
     function likelyCORS(msg){ return /TypeError|Failed to fetch|CORS|blocked/i.test(String(msg)); }
 
     async function boot(){
-      try {
+      try{
         setDiag("Probing meta…");
         const meta = await fetchJSON(URL_META);
         const docs = Number(meta.docs ?? 0);
         const chunkCount = Number(meta.chunkCount ?? 0);
         elCounts.textContent = `docs: ${docs}, chunks: ${chunkCount}`;
-
         if (docs === 0 || chunkCount === 0) {
-          setDiag(`${err(`Index empty (docs=${docs}, chunks=${chunkCount})`)}\n${hint("Publish /agent3 index files to enable search.")}\n${URL_META}`, "err");
+          setDiag(`${err(`Index empty (docs=${docs}, chunks=${chunkCount})`)}\n${hint("Ensure /agent3/* index files are published.")}\n${URL_META}`, "err");
           return;
         }
-
         setDiag("Fetching search index…");
         const idxJson = await fetchJSON(URL_LUNR);
-
         setDiag("Fetching chunks…");
         chunks = await fetchChunks(URL_CHUNKS);
         byId.clear();
-        for(const c of chunks){ if (c && c.id != null) byId.set(c.id, c); }
-
+        for(const c of chunks){ if(c && c.id!=null) byId.set(c.id, c); }
         lunrIndex = lunr.Index.load(idxJson);
-        setDiag(ok("Index loaded. Enter a query."), "ok");
-      } catch (e) {
-        setDiag(err(`Failed to load index: ${e.message}`), "err");
+        setDiag(ok("Index loaded. Enter a query."),"ok");
+      }catch(e){
+        setDiag(err(`Failed to load index: ${e.message}`),"err");
         appendDiag(`\nTried:\n- ${URL_META}\n- ${URL_LUNR}\n- ${URL_CHUNKS}`);
-        if (likelyCORS(e.message)) appendDiag(`\nNote: publish index and UI on the same origin to avoid CORS.`);
+        if(likelyCORS(e.message)) appendDiag(`\nSame-origin helps; the deploy workflow can copy index into /agent3.`);
       }
     }
 
@@ -166,21 +168,20 @@
       const q = elQ.value.trim();
       if(!q){ setDiag("Enter a query."); elOut.innerHTML = ""; return; }
       if(!lunrIndex){ setDiag("Index not ready yet."); return; }
-
+      const terms = q.split(/\s+/).filter(Boolean);
       const query = buildQuery(q, elOr.checked);
       setDiag(`Searching… (${elOr.checked ? "OR" : "AND"} mode)`);
-
       let hits = [];
       try { hits = lunrIndex.search(query); }
       catch(e){
         const safe = q.replace(/[^\p{L}\p{N}\s\-'"_]/gu, " ").trim();
         if(safe) hits = lunrIndex.search(safe);
       }
-
-      renderHits(hits, q.split(/\s+/).filter(Boolean));
+      renderHits(hits, terms);
       setDiag(`Found ${hits.length} hit${hits.length===1?"":"s"}.`);
     }
 
+    // Boot
     boot();
     elGo.addEventListener("click", run);
     elQ.addEventListener("keydown", e => { if(e.key === "Enter") run(); });
