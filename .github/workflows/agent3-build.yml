@@ -1,4 +1,4 @@
-name: Agent3 Build (BM25/Lunr)
+name: Agent3 Build (BM25/Lunr) — root publish
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     paths:
       - 'Law-Tools/scripts/agent3-build.mjs'
       - 'Law-Tools/**'
+      - 'scripts/**'
       - 'data/**'
 
 jobs:
@@ -13,28 +14,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Sanity: top-level tree
+      - name: Rule 12 — Sanity trees
         run: |
-          echo "== repo root =="
-          ls -la
-          echo
-          echo "== Law-Tools =="
-          ls -la Law-Tools || true
-          echo
-          echo "== data (first 3 levels) =="
-          find data -maxdepth 3 -type d -print 2>/dev/null || true
+          echo "== repo root ==" && ls -la
+          echo && echo "== Law-Tools ==" && ls -la Law-Tools || true
+          echo && echo "== scripts ==" && ls -la scripts || true
+          echo && echo "== data (up to 3 levels) ==" && find data -maxdepth 3 -type d -print 2>/dev/null || true
 
-      - name: Verify builder presence
+      - name: Rule 12 — Verify builder presence
         run: |
           if [ ! -f "Law-Tools/scripts/agent3-build.mjs" ]; then
             echo "ERROR: Missing builder at Law-Tools/scripts/agent3-build.mjs"
             exit 1
           fi
-          echo "Builder found: Law-Tools/scripts/agent3-build.mjs"
+          echo "Builder found."
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -56,18 +54,13 @@ jobs:
             --lines 12 \
             --step 6
 
-      - name: Show outputs
+      - name: Rule 12 — Verify outputs
         run: |
-          echo "== agent3-bm25 =="
-          ls -la agent3-bm25 || true
-          echo
-          for f in agent3-bm25/agent3.meta.json agent3-bm25/agent3.json; do
-            echo "---- $f ----"
-            test -f "$f" && sed -n '1,200p' "$f" || echo "(missing)"
-            echo
-          done
-          echo "chunks.jsonl head:"
-          head -n 10 agent3-bm25/chunks.jsonl || true
+          test -f agent3-bm25/agent3.meta.json || (echo "ERROR: agent3.meta.json missing" && exit 1)
+          test -f agent3-bm25/lunr-index.json   || (echo "ERROR: lunr-index.json missing" && exit 1)
+          test -f agent3-bm25/chunks.jsonl      || (echo "ERROR: chunks.jsonl missing" && exit 1)
+          sed -n '1,120p' agent3-bm25/agent3.meta.json || true
+          head -n 5 agent3-bm25/chunks.jsonl || true
 
       - name: Upload artifact (agent3-bm25)
         uses: actions/upload-artifact@v4
@@ -75,10 +68,26 @@ jobs:
           name: agent3-bm25
           path: agent3-bm25
 
-      - name: Commit outputs
+      - name: Publish Agent3 UI to root
         run: |
-          git config user.name "github-actions[bot]"
+          # Ensure UI files exist in repo
+          test -f Law-Tools/agent3.html || (echo "ERROR: Law-Tools/agent3.html not found" && exit 1)
+          test -f Law-Tools/txt-viewer.html || (echo "ERROR: Law-Tools/txt-viewer.html not found" && exit 1)
+          # Copy UI into the Pages-served folder (root)
+          mkdir -p Law-Tools
+          cp -f Law-Tools/agent3.html Law-Tools/agent3.html
+          cp -f Law-Tools/txt-viewer.html Law-Tools/txt-viewer.html
+          # Optional helper script referenced by the UI
+          if [ -f scripts/citation-spotter.js ]; then
+            mkdir -p scripts
+            cp -f scripts/citation-spotter.js scripts/citation-spotter.js
+          fi
+          # Stage files
+          git add agent3-bm25/* Law-Tools/agent3.html Law-Tools/txt-viewer.html scripts/citation-spotter.js 2>/dev/null || true
+
+      - name: Commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add agent3-bm25/*
-          git commit -m "agent3-bm25: rebuild $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes"
+          git commit -m "Agent3: rebuild index + publish UI (root) $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes to commit"
           git push
