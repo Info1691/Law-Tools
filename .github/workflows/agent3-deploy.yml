@@ -1,12 +1,10 @@
-name: Agent3 — Deploy existing index (auto-detect) [Rule 12]
+name: Agent3 — Deploy UI only (Rule 12)
 
 on:
   workflow_dispatch:
   push:
     paths:
       - 'Law-Tools/**'
-      - 'agent3/**'
-      - 'data/agent3/**'
       - '.github/workflows/agent3-deploy.yml'
 
 permissions:
@@ -25,52 +23,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rule 12 — show tree
-        run: |
-          echo "== repo root ==" && ls -la
-          echo && echo "== Law-Tools ==" && ls -la Law-Tools || true
-          echo && echo "== agent3 ==" && ls -la agent3 || true
-          echo && echo "== data/agent3 ==" && ls -la data/agent3 || true
-
-      - name: Rule 12 — pick index source dir
-        id: pick
-        run: |
-          SRC=""
-          if [ -f agent3/agent3.meta.json ] && [ -f agent3/lunr-index.json ] && [ -f agent3/chunks.jsonl ]; then
-            SRC="agent3"
-          elif [ -f data/agent3/agent3.meta.json ] && [ -f data/agent3/lunr-index.json ] && [ -f data/agent3/chunks.jsonl ]; then
-            SRC="data/agent3"
-          else
-            echo "ERROR: No index found. Need agent3.meta.json, lunr-index.json, chunks.jsonl in agent3/ or data/agent3/." >&2
-            exit 1
-          fi
-          echo "src_dir=$SRC" >> $GITHUB_OUTPUT
-          echo "Using index from: $SRC"
-
-      - name: Rule 12 — verify UI files
+      - name: Rule 12 — verify UI
         run: |
           test -f Law-Tools/agent3.html || (echo "ERROR: Law-Tools/agent3.html missing" && exit 1)
           test -f Law-Tools/txt-viewer.html || (echo "ERROR: Law-Tools/txt-viewer.html missing" && exit 1)
-          # Optional helper; don't fail if absent
-          if [ -f scripts/citation-spotter.js ]; then echo "citation-spotter.js present"; else echo "citation-spotter.js not present (ok)"; fi
 
       - name: Assemble static site (dist/)
         run: |
-          mkdir -p dist/Law-Tools dist/agent3 dist/scripts
-          # UI
-          cp -f Law-Tools/agent3.html     dist/Law-Tools/agent3.html
+          mkdir -p dist/Law-Tools
+          cp -f Law-Tools/agent3.html dist/Law-Tools/agent3.html
           cp -f Law-Tools/txt-viewer.html dist/Law-Tools/txt-viewer.html
-          # Helper if exists
-          if [ -f scripts/citation-spotter.js ]; then cp -f scripts/citation-spotter.js dist/scripts/citation-spotter.js; fi
-          # Index (copy from source dir chosen above)
-          SRC="${{ steps.pick.outputs.src_dir }}"
-          cp -f "$SRC/agent3.meta.json" dist/agent3/agent3.meta.json
-          cp -f "$SRC/lunr-index.json"  dist/agent3/lunr-index.json
-          cp -f "$SRC/chunks.jsonl"     dist/agent3/chunks.jsonl
-
-          # Custom domain
           echo "tools.wwwbcb.org" > dist/CNAME
-
           echo "== dist tree ==" && find dist -maxdepth 3 -type f -print
 
       - name: Upload artifact to Pages
