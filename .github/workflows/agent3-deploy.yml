@@ -1,10 +1,11 @@
-name: Agent3 — Deploy UI only (Rule 12)
+name: Agent3 — Deploy UI only (Rule 12, root version)
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'Law-Tools/**'
+      - 'agent3.html'
+      - 'txt-viewer.html'
       - '.github/workflows/agent3-deploy.yml'
 
 permissions:
@@ -25,16 +26,16 @@ jobs:
 
       - name: Rule 12 — verify UI
         run: |
-          test -f Law-Tools/agent3.html || (echo "ERROR: Law-Tools/agent3.html missing" && exit 1)
-          test -f Law-Tools/txt-viewer.html || (echo "ERROR: Law-Tools/txt-viewer.html missing" && exit 1)
+          test -f agent3.html || (echo "ERROR: agent3.html missing" && exit 1)
+          test -f txt-viewer.html || (echo "ERROR: txt-viewer.html missing" && exit 1)
 
       - name: Assemble static site (dist/)
         run: |
-          mkdir -p dist/Law-Tools
-          cp -f Law-Tools/agent3.html dist/Law-Tools/agent3.html
-          cp -f Law-Tools/txt-viewer.html dist/Law-Tools/txt-viewer.html
+          mkdir -p dist
+          cp -f agent3.html dist/agent3.html
+          cp -f txt-viewer.html dist/txt-viewer.html
           echo "tools.wwwbcb.org" > dist/CNAME
-          echo "== dist tree ==" && find dist -maxdepth 3 -type f -print
+          echo "== dist tree ==" && find dist -maxdepth 2 -type f -print
 
       - name: Upload artifact to Pages
         uses: actions/upload-pages-artifact@v3
