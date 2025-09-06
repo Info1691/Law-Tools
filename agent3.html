@@ -35,10 +35,7 @@
     .hint { color:#c9a9ff; }
   </style>
 
-  <!-- Lunr (serialized index loader) -->
   <script src="https://cdn.jsdelivr.net/npm/lunr/lunr.min.js"></script>
-
-  <!-- Rule 10: client-side citation linker (highlights case names, neutral cites, etc.) -->
   <script src="/scripts/citation-spotter.js" defer></script>
 </head>
 <body>
@@ -59,11 +56,7 @@
   </main>
 
   <script>
-    // ================================
-    // Rule 12: self-diagnostics & no silent failures
-    // ================================
-
-    // ---- Config (keep your live paths) ----
+    // ---- Config: keep your live paths ----
     const TEXTS_BASE = "https://texts.wwwbcb.org/agent3-bm25";
     const URL_META   = `${TEXTS_BASE}/agent3.meta.json`;
     const URL_LUNR   = `${TEXTS_BASE}/lunr-index.json`;
@@ -71,8 +64,8 @@
 
     // ---- State ----
     let lunrIndex = null;
-    let chunks = [];              // array of { id, url, title, text }
-    const byId = new Map();       // id -> record
+    let chunks = [];                // [{id,url,title,text,lineStart,lineEnd,...}]
+    const byId = new Map();         // id -> record
     let meta = null;
 
     // ---- Elements ----
@@ -84,7 +77,6 @@
     const elCounts = $("#counts");
     const elOr     = $("#orMode");
 
-    // ---- Diagnostics ----
     const DEBUG = /[?&]debug=1\b/.test(location.search);
     const FETCH_OPTS = DEBUG ? { cache:"no-store" } : {};
     const ok  = (m)=> `\u2713 ${m}`;
@@ -131,7 +123,6 @@
       const start = Math.max(0, pos - Math.floor(span/3));
       const end   = Math.min(txt.length, start + span);
       let slice = txt.slice(start, end);
-      // naive highlight (kept simple; citation-spotter will do extra markup)
       for (const t of terms) {
         if (!t) continue;
         const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"), "gi");
@@ -156,20 +147,28 @@
         card.className = "card result";
         const title = rec.title || "Untitled";
         const url = rec.url || "#";
+
+        // Build 10-line segment viewer URL (safe fallback if indexes missing)
+        const start = Number.isFinite(rec.lineStart) ? rec.lineStart : 0;
+        const end   = Number.isFinite(rec.lineEnd)   ? rec.lineEnd   : (start + 10);
+        const viewUrl = `/Law-Tools/txt-viewer.html?src=${encodeURIComponent(url)}&start=${start}&end=${end}`;
+
         card.innerHTML = `
           <h3>${title}</h3>
           <div class="meta">
             <span>score: ${h.score.toFixed(4)}</span>
-            <a href="${url}" target="_blank" rel="noopener">open TXT</a>
+            <a href="${viewUrl}" target="_blank" rel="noopener">open 10 lines</a>
+            <a href="${url}" target="_blank" rel="noopener">open full TXT</a>
           </div>
           <div class="snippet result-snippet">${makeSnippet(rec.text, terms)}</div>
           <div class="links">
+            <a href="${viewUrl}" target="_blank" rel="noopener">Segment (±10 lines)</a>
             <a href="${url}" target="_blank" rel="noopener">Full context</a>
           </div>
         `;
         elOut.appendChild(card);
       }
-      // Rule 10 linker auto-runs on .result/.snippet
+      // citation-spotter.js will auto-annotate inside .result/.snippet
     }
 
     function buildQuery(q, orMode){
@@ -183,7 +182,6 @@
       return /TypeError|Failed to fetch|CORS|blocked/i.test(String(msg));
     }
 
-    // ---- Boot sequence with explicit checks ----
     async function boot() {
       try {
         setDiag("Probing meta…");
@@ -200,18 +198,7 @@
         setDiag("Fetching search index…");
         const idxJson = await fetchJSON(URL_LUNR);
 
-        setDiag("Fetching chunk headers…");
-        const headTxt = await fetchTEXT(URL_CHUNKS);
-        const firstLines = headTxt.split(/\r?\n/).slice(0, 5).join("\n");
-
-        if (DEBUG) {
-          appendDiag(`\n${ok("meta ok")} ${URL_META}`);
-          appendDiag(`${ok("index ok")} ${URL_LUNR}`);
-          appendDiag(`${ok("chunks head ok")} ${URL_CHUNKS}`);
-          appendDiag(`\nHead lines:\n${firstLines}`);
-        }
-
-        // Load full chunks + build ID map
+        setDiag("Fetching chunks…");
         chunks = await fetchChunks(URL_CHUNKS);
         byId.clear();
         for(const c of chunks){ if (c && c.id != null) byId.set(c.id, c); }
@@ -240,7 +227,6 @@
       try {
         hits = lunrIndex.search(query);
       } catch(e){
-        // fall back to a safer query if lunr complains
         const safe = q.replace(/[^\p{L}\p{N}\s\-'"_]/gu, " ").trim();
         if(safe) hits = lunrIndex.search(safe);
       }
@@ -249,7 +235,6 @@
       setDiag(`Found ${hits.length} hit${hits.length===1?"":"s"}.`);
     }
 
-    // Start + events
     boot();
     elGo.addEventListener("click", run);
     elQ.addEventListener("keydown", e => { if(e.key === "Enter") run(); });
