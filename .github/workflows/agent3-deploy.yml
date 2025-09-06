@@ -1,12 +1,11 @@
-name: Agent3 — Build & Deploy (Rule 12)
+name: Agent3 — Deploy existing index (Rule 12)
 
 on:
   workflow_dispatch:
   push:
     paths:
       - 'Law-Tools/**'
-      - 'scripts/**'
-      - 'data/**'
+      - 'agent3/**'
       - '.github/workflows/agent3-deploy.yml'
 
 permissions:
@@ -19,86 +18,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
-    outputs:
-      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rule 12 — show tree
+      - name: Rule 12 — verify existing outputs
         run: |
-          echo "== root ==" && ls -la
-          echo && echo "== Law-Tools ==" && ls -la Law-Tools || true
-          echo && echo "== scripts ==" && ls -la scripts || true
-          echo && echo "== data (first 3 levels) ==" && find data -maxdepth 3 -type d -print 2>/dev/null || true
+          echo "== repo root =="
+          ls -la
+          echo && echo "== agent3 (expected index outputs) =="
+          ls -la agent3 || true
+          test -f agent3/agent3.meta.json || (echo "ERROR: agent3/agent3.meta.json missing" && exit 1)
+          test -f agent3/lunr-index.json   || (echo "ERROR: agent3/lunr-index.json missing" && exit 1)
+          test -f agent3/chunks.jsonl      || (echo "ERROR: agent3/chunks.jsonl missing" && exit 1)
 
-      - name: Find builder
-        id: find_builder
+          echo && echo "== Law-Tools UI =="
+          ls -la Law-Tools || true
+          test -f Law-Tools/agent3.html || (echo "ERROR: Law-Tools/agent3.html missing" && exit 1)
+          test -f Law-Tools/txt-viewer.html || (echo "ERROR: Law-Tools/txt-viewer.html missing" && exit 1)
+
+      - name: Assemble static site (dist/)
         run: |
-          if [ -f "Law-Tools/scripts/agent3-build.mjs" ]; then
-            echo "BUILDER=Law-Tools/scripts/agent3-build.mjs" >> $GITHUB_ENV
-            echo "builder_path=Law-Tools/scripts/agent3-build.mjs"
-          elif [ -f "scripts/agent3-build.mjs" ]; then
-            echo "BUILDER=scripts/agent3-build.mjs" >> $GITHUB_ENV
-            echo "builder_path=scripts/agent3-build.mjs"
-          else
-            echo "ERROR: agent3-build.mjs not found in Law-Tools/scripts/ or scripts/" >&2
-            exit 1
-          fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install deps
-        run: |
-          npm init -y >/dev/null 2>&1 || true
-          npm install lunr
-
-      - name: Build Agent3 index
-        run: |
-          node "$BUILDER" \
-            --src ./data \
-            --out ./agent3-bm25 \
-            --base https://texts.wwwbcb.org/data \
-            --lines 12 \
-            --step 6
-
-      - name: Rule 12 — verify outputs
-        run: |
-          test -f agent3-bm25/agent3.meta.json || (echo "ERROR: agent3.meta.json missing" && exit 1)
-          test -f agent3-bm25/lunr-index.json   || (echo "ERROR: lunr-index.json missing" && exit 1)
-          test -f agent3-bm25/chunks.jsonl      || (echo "ERROR: chunks.jsonl missing" && exit 1)
-          echo "meta:" && sed -n '1,120p' agent3-bm25/agent3.meta.json || true
-          echo; echo "chunks head:" && head -n 5 agent3-bm25/chunks.jsonl || true
-
-      - name: Assemble static site artifact (dist/)
-        run: |
-          mkdir -p dist/Law-Tools dist/scripts dist/agent3-bm25
-          # UI (must exist)
-          test -f Law-Tools/agent3.html || (echo "ERROR: Law-Tools/agent3.html not found" && exit 1)
-          test -f Law-Tools/txt-viewer.html || (echo "ERROR: Law-Tools/txt-viewer.html not found" && exit 1)
-          cp -f Law-Tools/agent3.html dist/Law-Tools/agent3.html
+          mkdir -p dist/Law-Tools dist/agent3 dist/scripts
+          # UI
+          cp -f Law-Tools/agent3.html    dist/Law-Tools/agent3.html
           cp -f Law-Tools/txt-viewer.html dist/Law-Tools/txt-viewer.html
           # Optional helper
           if [ -f scripts/citation-spotter.js ]; then
             cp -f scripts/citation-spotter.js dist/scripts/citation-spotter.js
           fi
-          # Copy the built index alongside the UI for same-origin access
-          cp -f agent3-bm25/* dist/agent3-bm25/
-          # (Optional) create a CNAME so Pages uses your custom domain
+          # EXISTING index outputs (publish as /agent3/*)
+          cp -f agent3/* dist/agent3/
+
+          # CNAME so the site answers at your custom domain
           echo "tools.wwwbcb.org" > dist/CNAME
 
-          echo "== dist tree ==" && find dist -maxdepth 3 -type f -print
+          echo "== dist tree =="
+          find dist -maxdepth 3 -type f -print
 
-      - name: Upload Pages artifact
+      - name: Upload artifact to Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
       - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4
