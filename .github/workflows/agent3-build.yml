@@ -1,4 +1,4 @@
-name: Agent3 Build (BM25/Lunr) — root publish
+name: Agent3 Build (BM25/Lunr) — docs publish
 
 on:
   workflow_dispatch:
@@ -68,26 +68,28 @@ jobs:
           name: agent3-bm25
           path: agent3-bm25
 
-      - name: Publish Agent3 UI to root
+      - name: Publish Agent3 UI to /docs
         run: |
           # Ensure UI files exist in repo
           test -f Law-Tools/agent3.html || (echo "ERROR: Law-Tools/agent3.html not found" && exit 1)
           test -f Law-Tools/txt-viewer.html || (echo "ERROR: Law-Tools/txt-viewer.html not found" && exit 1)
-          # Copy UI into the Pages-served folder (root)
-          mkdir -p Law-Tools
-          cp -f Law-Tools/agent3.html Law-Tools/agent3.html
-          cp -f Law-Tools/txt-viewer.html Law-Tools/txt-viewer.html
-          # Optional helper script referenced by the UI
+          # Copy UI into the Pages-served folder (/docs)
+          mkdir -p docs/Law-Tools docs/scripts
+          cp -f Law-Tools/agent3.html docs/Law-Tools/agent3.html
+          cp -f Law-Tools/txt-viewer.html docs/Law-Tools/txt-viewer.html
           if [ -f scripts/citation-spotter.js ]; then
-            mkdir -p scripts
-            cp -f scripts/citation-spotter.js scripts/citation-spotter.js
+            cp -f scripts/citation-spotter.js docs/scripts/citation-spotter.js
           fi
+          # Copy index outputs for direct access under /docs (optional but handy)
+          mkdir -p docs/agent3-bm25
+          cp -f agent3-bm25/* docs/agent3-bm25/
           # Stage files
-          git add agent3-bm25/* Law-Tools/agent3.html Law-Tools/txt-viewer.html scripts/citation-spotter.js 2>/dev/null || true
+          git add docs/Law-Tools/agent3.html docs/Law-Tools/txt-viewer.html docs/scripts/citation-spotter.js 2>/dev/null || true
+          git add docs/agent3-bm25/* 2>/dev/null || true
 
       - name: Commit & push
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "Agent3: rebuild index + publish UI (root) $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes to commit"
+          git commit -m "Agent3: rebuild index + publish UI (/docs) $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes to commit"
           git push
